@@ -156,6 +156,7 @@ textarea.notes::placeholder{color:var(--label3)}
 /* Fixtermin-Liste */
 .fxt{width:48px;flex:none;font-weight:700;color:var(--orange);font-variant-numeric:tabular-nums}
 .fx1{font-weight:600;font-size:16px}
+.cnbtns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
 .fxt.flex{color:var(--teal);font-size:14px}
 .fx3{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:13px;font-weight:600;color:var(--red)}
 .fx3 svg{width:12px;height:12px;flex:none}
@@ -1258,7 +1259,9 @@ function renderPlan(){
   const lb = state.lastBackup ? (Date.now() - new Date(state.lastBackup).getTime())/864e5 : Infinity;
   const notes = [];
   if(pend) notes.push(iconRow('tray','blue',`${pend} ${pend===1?'Ticket wartet':'Tickets warten'} auf Prüfung`,'goScan'));
-  if(state.tickets.length && lb > 7) notes.push(iconRow('upload','orange', state.lastBackup ? 'Backup ist älter als 7 Tage' : 'Noch kein Backup erstellt','backup'));
+  const dow = new Date().getDay();
+  if(state.tickets.length && lb > 1 && lb <= 7 && (dow === 5 || dow === 6 || dow === 0)) notes.push(iconRow('upload','orange','Wochenende: Backup erstellen','backup'));
+  else if(state.tickets.length && lb > 7) notes.push(iconRow('upload','orange', state.lastBackup ? 'Backup ist älter als 7 Tage' : 'Noch kein Backup erstellt','backup'));
   if(notes.length) h += `<div class="group" style="margin-bottom:14px">${notes.join('')}</div>`;
 
   if(!P.total){
@@ -1603,6 +1606,7 @@ function openDetail(id){
         </div>`).join('') + `</div>` +
         brandUI;
     })()}
+    ${noteHtml(t)}
     <div class="glabel">Gescannte Geräte</div>
     <div class="group scanlist">
       ${(t.scans || []).map((sc, i) => `<div class="row">
@@ -1708,6 +1712,39 @@ function openPaste(){
     <div class="gfoot">In Outlook die Mail oder die Kalendereinträge kopieren und hier einfügen. Der Techniker-Filter wird automatisch angewendet.</div>
     <div class="gfoot"><b>Tipp:</b> Ins Textfeld tippen und «Text scannen» wählen – das iPhone liest das Ticketblatt direkt mit der Kamera.</div>`, 'paste');
 }
+/* ---------- Notiz fürs Ticket (Standardsätze) ---------- */
+function devWord(t){
+  const d = [t.oldDevice, t.newDevice, t.title, t.material].filter(Boolean).join(' ');
+  if(/dock/i.test(d)) return { w:'Dock', art:'Die' };
+  if(/monitor|bildschirm|display/i.test(d) && !NB_RE.test(t.oldDevice||'')) return { w:'Monitor', art:'Der' };
+  if(PC_RE.test(t.oldDevice || '') && !NB_RE.test(t.oldDevice || '')) return { w:'Computer', art:'Der' };
+  return { w:'Notebook', art:'Das' };
+}
+function noteKind(t){
+  const k = (t.kind || t.title || '').toLowerCase();
+  if(/abbau|abholung|abholen|r(ü|ue)ckbau|r(ü|ue)cknahme|entsorg|dispose/.test(k)) return 'abbau';
+  if(/lieferung|aufbau|ausliefern|install|rollout/.test(k)) return 'lieferung';
+  return 'austausch';
+}
+function noteDefault(t, test){
+  const key = noteKind(t) + '|' + test, custom = (state.settings.noteTpl || {})[key];
+  const { w, art } = devWord(t);
+  if(custom) return custom.replace(/\{gerät\}/gi, w).replace(/\{art\}/gi, art);
+  const k = noteKind(t);
+  if(k === 'abbau') return `${art} ${w} wurde abgeholt.`;
+  if(k === 'lieferung') return test === 'mit' ? `${art} ${w} wurde geliefert und eingerichtet. Login erfolgreich, alles i.O.` : `${art} ${w} wurde geliefert.`;
+  return test === 'mit' ? `${art} ${w} wurde ersetzt. Alles i.O.` : `${art} ${w} wurde ersetzt.`;
+}
+function noteText(t){ return t.closeNote != null ? t.closeNote : noteDefault(t, t.closeTest || 'mit'); }
+function noteHtml(t){
+  const test = t.closeTest || 'mit', canTest = noteKind(t) !== 'abbau';
+  return `<div class="glabel">Notiz fürs Ticket</div>
+    ${canTest ? `<div class="seg" id="cnSeg">${[['ohne','Ohne Test'],['mit','Mit Test (Login OK)']].map(([v,l]) => `<button class="${test === v ? 'on' : ''}" data-act="cnTest" data-id="${t.id}" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
+    <div class="group" style="margin-top:8px"><textarea id="cnText" class="notes" rows="3" data-id="${t.id}">${esc(noteText(t))}</textarea></div>
+    <div class="cnbtns"><button class="btn-tint" data-act="cnCopy" data-id="${t.id}">${ICON.copy}Kopieren</button>
+      <button class="btn-tint" style="--c:var(--indigo)" data-act="cnSave" data-id="${t.id}">Als Standard merken</button></div>
+    <div class="gfoot">Wird beim Erledigen nicht verschickt – du kopierst den Satz und fügst ihn im Ticket ein. «Mit Test» = Login geprüft.</div>`;
+}
 const needsOldScan = t => !!(t.oldDevice || /austausch|abbau|abholung|r(ü|ue)ckbau/i.test(t.kind || ''));
 function toggleDone(id, force){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
@@ -1732,6 +1769,7 @@ function openFinish(id){
     <div class="group">${list || '<div class="row"><span class="k" style="color:var(--label2)">Noch nichts gescannt</span></div>'}</div>
     <button class="btn-fill" style="width:100%;margin-top:16px;--blue:var(--orange);background:var(--orange)" data-act="scanOld" data-id="${t.id}">${ICON.qr}${oldCount ? 'Weiteres altes Gerät scannen' : 'QR altes Gerät scannen'}</button>
     <button class="btn-tint" style="width:100%;margin-top:10px;--c:var(--green)" data-act="scanNew" data-id="${t.id}">${ICON.qr}Neues Gerät scannen (optional)</button>
+    ${noteHtml(t)}
     <div class="group" style="margin-top:20px">
       <div class="row tap" data-act="finishDone" data-id="${t.id}"><span class="k blue" style="font-weight:600">${oldCount ? 'Fertig – als erledigt markieren' : 'Ohne Scan als erledigt markieren'}</span></div>
     </div>`, 'finish:'+id);
@@ -2371,6 +2409,21 @@ document.addEventListener('click', e => {
     case 'scanClose': closeScanner(); if((scan.mode === 'old' || scan.mode === 'new') && scan.id) openFinish(scan.id); break;
     case 'scanTorch': toggleTorch(); break;
     case 'scanOld': openScanner('old', id); break;
+    case 'cnTest': {
+      const t = state.tickets.find(x => x.id === id); if(!t) break;
+      t.closeTest = b.dataset.v; t.closeNote = null; save();
+      const ta = $('#cnText'); if(ta) ta.value = noteText(t);
+      b.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); break;
+    }
+    case 'cnCopy': { const t = state.tickets.find(x => x.id === id); if(t) copyText(($('#cnText') || {}).value || noteText(t), 'Notiz kopiert'); break; }
+    case 'cnSave': {
+      const t = state.tickets.find(x => x.id === id); if(!t) break;
+      const txt = ($('#cnText').value || '').trim(); if(!txt) break;
+      const { w, art } = devWord(t);
+      const tpl = txt.split(w).join('{Gerät}').split(art + ' {Gerät}').join('{Art} {Gerät}');
+      state.settings.noteTpl = { ...(state.settings.noteTpl || {}), [noteKind(t) + '|' + (t.closeTest || 'mit')]: tpl };
+      save(); toast('Als Standard gemerkt'); break;
+    }
     case 'scanNew': openScanner('new', id); break;
     case 'finishDone': toggleDone(id, true); toast('Erledigt'); break;
     case 'exRange': exportRange = b.dataset.v; openExport(); break;
@@ -2476,6 +2529,7 @@ document.addEventListener('change', e => {
     p && p.then(() => { if(state.pending.length) $('#pendingList').scrollIntoView({ behavior:'smooth', block:'start' }); });
     return;
   }
+  if(id === 'cnText'){ const t = state.tickets.find(x => x.id === e.target.dataset.id); if(t){ t.closeNote = e.target.value; save(); } return; }
   if(id === 'inImport' && e.target.files[0]){ importBackup(e.target.files[0]); e.target.value = ''; return; }
   if(id === 'dayInput' && e.target.value){ view.date = e.target.value; renderPlan(); return; }
   const k = e.target.dataset && e.target.dataset.set;
