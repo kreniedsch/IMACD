@@ -864,7 +864,7 @@ function plan(date){
     const tr = travel(last, fx);
     const conflict = cursor + tr > fs;
     if(!conflict && fs - tr - cursor >= 10) items.push({ type:'free', start:cursor, end:fs-tr });
-    if(tr) items.push({ type:'travel', start:Math.max(cursor, fs-tr), end:fs });
+    if(tr && fs > Math.max(cursor, fs-tr)) items.push({ type:'travel', start:Math.max(cursor, fs-tr), end:fs });
     items.push({ type:'ticket', t:fx, start:fs, end:fs+durOf(fx), conflict: conflict && last ? last : null });
     cursor = Math.max(cursor, fs + durOf(fx)); last = fx;
   }
