@@ -275,8 +275,8 @@ nav.tabs button.on{color:var(--blue)}
     <div class="seg" id="techSeg"></div>
     <div class="gfoot">Es werden nur Tickets für diesen Techniker übernommen.</div>
     <div class="tiles">
-      <label class="tile" style="--c:var(--blue)"><input type="file" accept="image/*" capture="environment" id="inCam"><span class="ico" data-icon="camera"></span><div><b>Kamera</b><small>Ticketblatt fotografieren</small></div></label>
-      <label class="tile" style="--c:var(--indigo)"><input type="file" accept="image/*,application/pdf,.pdf,text/calendar,.ics" multiple id="inFiles"><span class="ico" data-icon="photo"></span><div><b>Fotos & Dateien</b><small>Bilder, PDF, Kalender</small></div></label>
+      <label class="tile" style="--c:var(--blue)"><input type="file" accept="image/*" capture="environment" id="inCam"><span class="ico" data-icon="camera"></span><div><b>Kamera</b><small>Blatt für Blatt fotografieren</small></div></label>
+      <label class="tile" style="--c:var(--indigo)"><input type="file" accept="image/*,application/pdf,.pdf,text/calendar,.ics" multiple id="inFiles"><span class="ico" data-icon="photo"></span><div><b>Fotos & Dateien</b><small>Mehrere Fotos auf einmal, PDF</small></div></label>
       <button class="tile wide" style="--c:var(--green)" data-act="openPaste"><span class="ico" data-icon="text"></span><div style="flex:1"><b>Text einfügen</b><small>Mail oder Kalendereinträge aus Outlook</small></div><span class="chev" data-icon="chev"></span></button>
     </div>
     <div class="glabel">Optionen</div>
@@ -284,7 +284,11 @@ nav.tabs button.on{color:var(--blue)}
       <div class="row"><label class="k" for="scanDate">Datum</label><input type="date" id="scanDate"></div>
       <div class="row"><span class="k grow">Mehrere Fotos</span><div class="seg sm" id="pmSeg"></div><input type="hidden" id="photoMode" value="one"></div>
     </div>
-    <div class="card prog" id="progWrap" hidden><div class="spin"></div><div style="flex:1;min-width:0"><div id="progText">…</div><div class="pbar"><div id="progBar"></div></div></div></div>
+    <div class="card" id="progWrap" hidden>
+      <div class="prog" style="margin:0"><div class="spin"></div><div style="flex:1;min-width:0"><div id="progText">…</div><div class="pbar"><div id="progBar"></div></div></div></div>
+      <div class="small" id="queueInfo" style="color:var(--label2);font-size:13px;margin-top:8px"></div>
+      <label class="btn-fill" style="width:100%;margin-top:12px;position:relative"><input type="file" accept="image/*" capture="environment" id="inCam2" class="vh">Nächstes Blatt fotografieren</label>
+    </div>
     <div id="pendingList"></div>
     <div class="gfoot" id="scanFoot" style="margin-top:24px;text-align:center"></div>
   </section>
@@ -1579,9 +1583,18 @@ function foundMsg(n){
   const other = sk ? ` · ${sk} von anderen Technikern ausgelassen` : '';
   return n ? `${n} Ticket${n===1?'':'s'} erkannt – bitte prüfen${other}` : `Nichts für dich erkannt${other}`;
 }
-let busy = false;
-async function handleFiles(fileList){
-  const files = [...fileList]; if(!files.length || busy) return;
+let busy = false, batches = [], shot = 0;
+function handleFiles(fileList){
+  const files = [...fileList]; if(!files.length) return Promise.resolve();
+  batches.push(files); updateQueue();
+  if(busy) return Promise.resolve();
+  return (async () => { while(batches.length){ await processBatch(batches.shift()); } updateQueue(); })();
+}
+function updateQueue(){
+  const q = batches.reduce((a,b) => a + b.length, 0), el = $('#queueInfo');
+  if(el) el.textContent = q ? (q===1 ? '+ 1 weiteres Blatt in der Warteschlange' : `+ ${q} weitere Blätter in der Warteschlange`) : '';
+}
+async function processBatch(files){
   busy = true;
   const date = $('#scanDate').value || view.date;
   const mode = $('#photoMode').value;
@@ -1589,7 +1602,8 @@ async function handleFiles(fileList){
   try{
     for(let i=0;i<files.length;i++){
       const f = files[i];
-      progLabel = files.length > 1 ? `Datei ${i+1}/${files.length}` : 'Datei';
+      shot++;
+      progLabel = files.length > 1 ? `Blatt ${i+1}/${files.length}` : `Blatt ${shot}`;
       setProg(progLabel+' …', 0);
       if(aiReady() && !/\.ics$/i.test(f.name) && f.type !== 'text/calendar'){
         try{
@@ -1611,7 +1625,7 @@ async function handleFiles(fileList){
     if(merged.length) n += addCandidates(splitBlocks(merged.join('\n\n')), date);
     toast(n || lastSkipped ? foundMsg(n) : 'Kein Text erkannt. Foto gerader und heller aufnehmen.');
   }catch(e){ console.error(e); toast(errMsg(e)); }
-  finally{ busy = false; endProg(); }
+  finally{ busy = false; if(!batches.length){ endProg(); shot = 0; } }
 }
 
 /* ===================== EXPORT ===================== */
@@ -1765,7 +1779,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('change', e => {
   const id = e.target.id;
-  if(id === 'inCam' || id === 'inFiles'){
+  if(id === 'inCam' || id === 'inFiles' || id === 'inCam2'){
     const p = handleFiles(e.target.files); e.target.value = '';
     p && p.then(() => { if(state.pending.length) $('#pendingList').scrollIntoView({ behavior:'smooth', block:'start' }); });
     return;
