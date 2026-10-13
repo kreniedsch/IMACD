@@ -16,7 +16,7 @@
 :root{
   --bg:#F2F2F7;--card:#FFFFFF;--fill:rgba(118,118,128,.12);--segon:#FFFFFF;
   --label:#000000;--label2:rgba(60,60,67,.6);--label3:rgba(60,60,67,.28);--sep:rgba(60,60,67,.22);
-  --blue:#007AFF;--orange:#FF9500;--green:#34C759;--red:#FF3B30;--teal:#30B0C7;--indigo:#5856D6;--yellow:#FFCC00;
+  --plum:#AF52DE;--blue:#007AFF;--orange:#FF9500;--green:#34C759;--red:#FF3B30;--teal:#30B0C7;--indigo:#5856D6;--yellow:#FFCC00;
   --bar:rgba(249,249,249,.84);--shadow:0 1px 2px rgba(0,0,0,.04);
 }
 @media (prefers-color-scheme: dark){
@@ -24,7 +24,7 @@
     --bg:#000000;--card:#1C1C1E;--fill:rgba(118,118,128,.24);--segon:#636366;
     --label:#FFFFFF;--label2:rgba(235,235,245,.6);--label3:rgba(235,235,245,.28);--sep:rgba(84,84,88,.6);
     --blue:#0A84FF;--orange:#FF9F0A;--green:#30D158;--red:#FF453A;--teal:#40C8E0;--indigo:#5E5CE6;--yellow:#FFD60A;
-    --bar:rgba(22,22,24,.84);--shadow:none;
+    --bar:rgba(22,22,24,.84);--shadow:none;--plum:#BF5AF2;
   }
 }
 :root[data-theme="dark"]{
@@ -217,6 +217,18 @@ textarea.notes::placeholder{color:var(--label3)}
 .pk.pk-ask{background:color-mix(in srgb,var(--indigo) 14%,transparent);color:var(--indigo)}
 .pk.pk-ok{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
 .row .chk{width:24px;height:24px;margin:0}
+/* Lager: eingepackt */
+.lagerprog{float:right;font-weight:700;color:var(--plum);text-transform:none}
+.lagerprog.done{color:var(--green)}
+.lagerbar{margin:0 16px}
+.lagerbar>div{background:var(--plum)}
+.shelfbtn{flex:none;min-width:54px;height:44px;border-radius:12px;border:2px solid color-mix(in srgb,var(--blue) 35%,transparent);background:color-mix(in srgb,var(--blue) 10%,transparent);color:var(--blue);font-size:18px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:3px;padding:0 8px;transition:transform .12s,background .2s}
+.shelfbtn:active{transform:scale(.92)}
+.shelfbtn svg{width:16px;height:16px}
+.shelfbtn.on{background:var(--plum);border-color:var(--plum);color:#fff}
+.lagerrow.picked{background:color-mix(in srgb,var(--plum) 10%,var(--card))}
+.lagerrow.picked .fx1{color:var(--label2);text-decoration:line-through}
+button.pk{border:0;cursor:pointer;font-family:inherit}
 /* Leerer Zustand */
 .empty{text-align:center;padding:44px 24px}
 .eico{width:76px;height:76px;border-radius:22px;background:var(--fill);color:var(--label2);display:grid;place-items:center;margin:0 auto 16px}
@@ -1131,11 +1143,11 @@ function renderWeek(){
 }
 
 /* ---------- Tagesplan ---------- */
-function packChips(t){
+function packChips(t, tappable){
   if(t.done) return '';
   const p = packList(t); if(!p.length) return '';
   const done = t.packed || {};
-  return `<div class="packrow">${p.map(i => `<span class="pk ${done[i.key] ? 'pk-ok' : i.warn ? 'pk-warn' : i.ask ? 'pk-ask' : ''}">${done[i.key] ? '✓ ' : i.warn ? '⚠ ' : ''}${esc(i.label)}</span>`).join('')}</div>`;
+  return `<div class="packrow">${p.map(i => `<${tappable ? 'button' : 'span'} class="pk ${done[i.key] ? 'pk-ok' : i.warn ? 'pk-warn' : i.ask ? 'pk-ask' : ''}"${tappable ? ` data-act="packChip" data-id="${t.id}" data-k="${i.key}"` : ''}>${done[i.key] ? '✓ ' : i.warn ? '⚠ ' : ''}${esc(i.label)}</${tappable ? 'button' : 'span'}>`).join('')}</div>`;
 }
 function tlRow(t, start, end, opt={}){
   t._site = opt.siteCount || 0;
@@ -1234,25 +1246,31 @@ function renderPlan(){
       </div>`).join('') + `</div>`;
   }
 
-  // Material aus dem Lager
-  const mat = state.tickets.filter(t => t.date === view.date && t.shelf && visible(t)).sort((a,b) => a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
-  if(mat.length){
-    h += `<div class="glabel">Aus dem Lager holen</div><div class="group">` + mat.map(t => `
-      <div class="row tap ${t.done?'done':''}" data-act="detail" data-id="${t.id}">
-        <div class="fxt" style="color:var(--blue)">${esc(t.shelf)}</div>
+  // Material aus dem Lager – antippen = eingepackt
+  const matAll = state.tickets.filter(t => t.date === view.date && t.shelf && visible(t) && !t.done)
+    .sort((a,b) => (!!a.picked - !!b.picked) || a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
+  if(matAll.length){
+    const np = matAll.filter(t => t.picked).length, all = np === matAll.length;
+    h += `<div class="glabel">Aus dem Lager holen<span class="lagerprog ${all ? 'done' : ''}">${np}/${matAll.length}</span></div>
+      <div class="pbar lagerbar"><div style="width:${Math.round(np / matAll.length * 100)}%"></div></div>`;
+    if(all) h += `<div class="card allok" style="margin-top:8px"><span class="sq" style="--c:var(--plum)">${ICON.check}</span>Alles eingepackt – gute Fahrt!</div>`;
+    h += `<div class="group" style="margin-top:8px">` + matAll.map(t => `
+      <div class="row tap lagerrow ${t.picked ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
+        <button class="shelfbtn ${t.picked ? 'on' : ''}" data-act="pick" data-id="${t.id}" aria-label="Regal ${esc(t.shelf)} eingepackt">
+          ${t.picked ? ICON.check : ''}<span>${esc(t.shelf)}</span></button>
         <div class="k"><div class="fx1 ellip">${esc(t.newDevice || t.material || (t.oldDevice ? 'Ersatz für ' + t.oldDevice : t.title) || 'Gerät')}</div>
-          <div class="fx2 ellip">${esc([t.orderId ? 'Auftrag '+t.orderId : (t.free ? 'Kostenlos' : ''), t.ticket].filter(Boolean).join(' · '))}</div>
-          ${packChips(t)}</div>
+          <div class="fx2 ellip">${esc([t.start, t.orderId ? 'Auftrag '+t.orderId : (t.free ? 'Kostenlos' : ''), t.ticket].filter(Boolean).join(' · '))}</div>
+          ${packChips(t, true)}</div>
         <span class="chev">${ICON.chev}</span>
       </div>`).join('') + `</div>`;
-    // Gesamte Packliste
+    // Gesamte Packliste (nur noch nicht Eingepacktes)
     const tot = {};
-    mat.filter(t => !t.done).forEach(t => packList(t).filter(i => !(t.packed || {})[i.key]).forEach(i => {
+    matAll.filter(t => !t.picked).forEach(t => packList(t).filter(i => !(t.packed || {})[i.key]).forEach(i => {
       const base = i.label.replace(/^(\d+)×\s*/,''), n = +(i.label.match(/^(\d+)×/) || [0,1])[1];
       tot[base] = tot[base] || { n:0, warn:false }; tot[base].n += n; tot[base].warn ||= !!i.warn;
     }));
     const tk = Object.keys(tot);
-    if(tk.length) h += `<div class="gfoot" style="margin-top:8px"><b>Zusätzlich mitnehmen:</b> ${tk.map(k => `${tot[k].warn ? '⚠ ' : ''}${tot[k].n > 1 ? tot[k].n + '× ' : ''}${esc(k)}`).join(' · ')}</div>`;
+    if(tk.length) h += `<div class="gfoot" style="margin-top:8px"><b>Noch mitnehmen:</b> ${tk.map(k => `${tot[k].warn ? '⚠ ' : ''}${tot[k].n > 1 ? tot[k].n + '× ' : ''}${esc(k)}`).join(' · ')}</div>`;
   }
 
   // Tagesablauf
@@ -2251,6 +2269,20 @@ document.addEventListener('click', e => {
     case 'xlsxSave': exportInventory(exportRange, 'save'); break;
     case 'shareNow': if(pendingShare) navigator.share(pendingShare).then(() => { pendingShare = null; closeSheet(); }).catch(e => { if(e.name !== 'AbortError') toast(errMsg(e)); }); break;
     case 'openExport': openExport(); break;
+    case 'pick': {
+      const t = state.tickets.find(x => x.id === id); if(!t) break;
+      t.picked = !t.picked; t.packed ||= {};
+      packList(t).forEach(i => { t.packed[i.key] = t.picked; });
+      save(); renderPlan();
+      if(t.picked) toast(`${t.shelf} eingepackt`);
+      break;
+    }
+    case 'packChip': {
+      const t = state.tickets.find(x => x.id === id); if(!t) break;
+      t.packed ||= {}; t.packed[b.dataset.k] = !t.packed[b.dataset.k];
+      const p = packList(t); if(t.picked && p.some(i => !t.packed[i.key])) t.picked = false;
+      save(); renderPlan(); break;
+    }
     case 'pack': { const t = state.tickets.find(x => x.id === id); if(!t) break; t.packed ||= {}; t.packed[b.dataset.k] = !t.packed[b.dataset.k]; save(); renderPlan(); openDetail(id); break; }
     case 'newBrand': { const t = state.tickets.find(x => x.id === id); if(!t) break; t.newBrand = t.newBrand === b.dataset.v ? '' : b.dataset.v; save(); renderPlan(); openDetail(id); break; }
     case 'assignScan': {
