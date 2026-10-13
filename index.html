@@ -854,6 +854,7 @@ const ICON = {
   scan: SV('<path d="M3.5 8V6A2.5 2.5 0 0 1 6 3.5h2M16 3.5h2A2.5 2.5 0 0 1 20.5 6v2M20.5 16v2a2.5 2.5 0 0 1-2.5 2.5h-2M8 20.5H6A2.5 2.5 0 0 1 3.5 18v-2M7.5 9h9M7.5 12h9M7.5 15h5"/>'),
   sliders: SV('<path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1"/><circle cx="15" cy="6.5" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="17.5" r="2"/>'),
   tray: SV('<path d="M3 13l2.5-8.5h13L21 13v6a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 19zM3 13h5l1.5 2.5h5L16 13h5"/>'),
+  mail: SV('<rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="m3 6.5 9 6.5 9-6.5"/>'),
   qr: SV('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3M21 14v.01M14 21h3M21 18v3h-1M18 18h.01"/>'),
   close: SV('<path d="M6 6l12 12M18 6L6 18"/>', 2.5),
   bolt: SF('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
@@ -869,7 +870,7 @@ function load(){
     const s = JSON.parse(localStorage.getItem(STORE));
     if(s && s.settings && !s.settings.v3){
       const tg = /^[123]$/.test(s.settings.tech || '') ? 'T' + s.settings.tech : '';
-      s.settings.view = tg || 'all';
+      if(!s.settings.view) s.settings.view = tg || 'all';
       (s.tickets || []).forEach(t => { if(!t.group) t.group = groupOf(t.raw || '') || tg; });
       s.settings.v3 = true;
     }
@@ -2046,7 +2047,8 @@ function inventoryRows(range){
   }
   return rows;
 }
-async function exportInventory(range){
+let exportRange = 'day', pendingShare = null;
+async function exportInventory(range, mode = 'save'){
   const rows = inventoryRows(range);
   if(!rows.length){ toast('Keine Geräte im gewählten Zeitraum'); return; }
   try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
@@ -2068,19 +2070,41 @@ async function exportInventory(range){
   sheet('Alle', rows);
   const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
   const label = range === 'day' ? view.date : range === 'week' ? 'KW-' + weekStart(iso(new Date())) : 'alle';
-  await deliver(`imacd-inventar-${label}.xlsx`, out, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', true);
-  closeSheet();
+  const name = `imacd-inventar-${label}.xlsx`, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if(mode !== 'mail'){ await deliver(name, out, mime, false); closeSheet(); toast('Excel gespeichert'); return; }
+  const file = new File([out], name, { type:mime });
+  const old = rows.filter(r => /^Alt/.test(r.Status)), neu = rows.length - old.length;
+  const scope = range === 'day' ? longDate(view.date) : range === 'week' ? 'diese Woche' : 'alle Tickets';
+  const grp = viewGroup() === 'all' ? '' : ` (${viewGroup()})`;
+  const subject = `IMACD Inventar – ${scope}${grp}`;
+  const text = `${subject}\n\n${old.length} alte Geräte zu buchen (${old.filter(r => r.Gescannt === 'Ja').length} gescannt), ${neu} neue Geräte.\nDetails siehe Excel im Anhang.`;
+  pendingShare = { files:[file], title:subject, text };
+  if(!(navigator.canShare && navigator.canShare({ files:[file] }))){
+    await deliver(name, out, mime, false); closeSheet(); toast('Teilen nicht verfügbar – Excel gespeichert, bitte manuell anhängen'); return;
+  }
+  try{ await navigator.share(pendingShare); pendingShare = null; closeSheet(); }
+  catch(e){
+    if(e.name === 'AbortError'){ pendingShare = null; return; }
+    // iOS verlangt manchmal einen zweiten Tipp (Datei wurde erst erstellt)
+    showSheet(`<div class="grabber"></div>
+      <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Bereit</div><span></span></div>
+      <div class="gfoot" style="margin:12px 4px">Die Excel-Datei ist erstellt. Tippe auf «Per Mail senden» und wähle dann <b>Mail</b>.</div>
+      <button class="btn-fill" style="width:100%" data-act="shareNow">${ICON.mail}Per Mail senden</button>`, 'share');
+  }
 }
 function openExport(){
+  loadScript(XLSX_URL).catch(() => {});                 // vorladen, damit «Teilen» sofort geht
   const n = r => inventoryRows(r).length;
+  const R = [['day','Tag'],['week','Woche'],['all','Alle']];
+  const old = inventoryRows(exportRange).filter(r => /^Alt/.test(r.Status)).length;
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Inventar-Export</div><span></span></div>
+    <div class="seg" style="margin-top:8px">${R.map(([r,l]) => `<button class="${exportRange===r?'on':''}" data-act="exRange" data-v="${r}">${l} · ${n(r)}</button>`).join('')}</div>
+    <div class="gfoot">${exportRange === 'day' ? esc(longDate(view.date)) : exportRange === 'week' ? 'Diese Woche' : 'Alle gespeicherten Tickets'}${viewGroup() !== 'all' ? ' · Kalender ' + esc(viewGroup()) : ''} – davon <b>${old} alte Geräte</b> zu buchen.</div>
+    <button class="btn-fill" style="width:100%;margin-top:16px" data-act="xlsxMail">${ICON.mail}Per Mail senden</button>
+    <button class="btn-tint" style="width:100%;margin-top:10px" data-act="xlsxSave">${ICON.download}In Dateien sichern</button>
     <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Alt buchen</b>, <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>. Alte Geräte stehen immer zuerst, mit Asset-ID und Hostname vorne – für die Inventarpflege.</div>
-    <div class="group" style="margin-top:16px">
-      <div class="row tap" data-act="xlsx" data-r="day"><span class="k blue">Ausgewählter Tag (${esc(longDate(view.date))})</span><span class="v">${n('day')} Geräte</span></div>
-      <div class="row tap" data-act="xlsx" data-r="week"><span class="k blue">Diese Woche</span><span class="v">${n('week')} Geräte</span></div>
-      <div class="row tap" data-act="xlsx" data-r="all"><span class="k blue">Alle gespeicherten Tickets</span><span class="v">${n('all')} Geräte</span></div>
-    </div>`, 'export');
+`, 'export');
 }
 
 /* ===================== EVENTS ===================== */
@@ -2098,7 +2122,10 @@ document.addEventListener('click', e => {
     case 'scanOld': openScanner('old', id); break;
     case 'scanNew': openScanner('new', id); break;
     case 'finishDone': toggleDone(id, true); toast('Erledigt'); break;
-    case 'xlsx': exportInventory(b.dataset.r); break;
+    case 'exRange': exportRange = b.dataset.v; openExport(); break;
+    case 'xlsxMail': exportInventory(exportRange, 'mail'); break;
+    case 'xlsxSave': exportInventory(exportRange, 'save'); break;
+    case 'shareNow': if(pendingShare) navigator.share(pendingShare).then(() => { pendingShare = null; closeSheet(); }).catch(e => { if(e.name !== 'AbortError') toast(errMsg(e)); }); break;
     case 'openExport': openExport(); break;
     case 'assignScan': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
