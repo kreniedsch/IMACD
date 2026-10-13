@@ -2,7 +2,7 @@
 <html lang="de-CH">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -33,7 +33,8 @@
   --blue:#0A84FF;--orange:#FF9F0A;--green:#30D158;--red:#FF453A;--teal:#40C8E0;--indigo:#5E5CE6;--yellow:#FFD60A;
   --bar:rgba(22,22,24,.84);--shadow:none;
 }
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+input,select,textarea{font-size:max(16px,1em)}
 [hidden]{display:none!important}
 html,body{margin:0}
 body{background:var(--bg);color:var(--label);font:17px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,sans-serif;letter-spacing:-.01em;-webkit-font-smoothing:antialiased;padding-bottom:calc(88px + env(safe-area-inset-bottom))}
@@ -2113,6 +2114,16 @@ function openExport(){
     <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Alt buchen</b>, <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>. Alte Geräte stehen immer zuerst, mit Asset-ID und Hostname vorne – für die Inventarpflege.</div>
 `, 'export');
 }
+
+/* Zoomen sperren (Pinch + Doppeltippen) */
+['gesturestart','gesturechange','gestureend'].forEach(ev => document.addEventListener(ev, e => e.preventDefault(), { passive:false }));
+document.addEventListener('touchmove', e => { if(e.touches.length > 1) e.preventDefault(); }, { passive:false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => {
+  const now = Date.now();
+  if(now - lastTouchEnd < 300 && !e.target.closest('input,textarea,select')) e.preventDefault();
+  lastTouchEnd = now;
+}, { passive:false });
 
 /* ===================== EVENTS ===================== */
 document.addEventListener('click', e => {
