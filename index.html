@@ -229,6 +229,11 @@ textarea.notes::placeholder{color:var(--label3)}
 .lagerrow.picked{background:color-mix(in srgb,var(--plum) 10%,var(--card))}
 .lagerrow.picked .fx1{color:var(--label2);text-decoration:line-through}
 button.pk{border:0;cursor:pointer;font-family:inherit}
+/* Info an Techniker */
+.techinfo{display:flex;gap:7px;align-items:flex-start;margin-top:8px;padding:8px 10px;border-radius:10px;font-size:14px;line-height:1.35;background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--label)}
+.techinfo svg{width:16px;height:16px;flex:none;color:var(--red);margin-top:1px}
+.techinfo b{color:var(--red)}
+.techinfo.big{font-size:16px;padding:12px 14px;margin:14px 0 16px;border:1.5px solid color-mix(in srgb,var(--red) 45%,transparent)}
 /* Leerer Zustand */
 .empty{text-align:center;padding:44px 24px}
 .eico{width:76px;height:76px;border-radius:22px;background:var(--fill);color:var(--label2);display:grid;place-items:center;margin:0 auto 16px}
@@ -675,6 +680,13 @@ function outlookEnhance(t, lines, text){
     if(km && t.oldDevice && t.material) betreffTitle = km[1][0].toUpperCase() + km[1].slice(1) + ': ' + t.oldDevice + ' → ' + t.material.replace(/^\d+x\s/,'');
   }
 
+  {
+    const flat = text.replace(/\r/g,'');
+    const infos = [];
+    const re = /(?:info\s+)?an\s+(?:den\s+|die\s+)?techniker(?:in)?\s*[:\-]\s*([\s\S]*?)(?=(?:info\s+)?an\s+(?:den\s+)?stager|\n\s*\n|\n(?:geben sie|bitte beschreiben|konnten sie|wie k(?:ö|o)nnen|haben sie|quelle:)|$)/gi;
+    let m; while((m = re.exec(flat))){ const v = m[1].replace(/\s+/g,' ').trim(); if(v.length > 2 && !infos.includes(v)) infos.push(v); }
+    if(infos.length) t.techInfo = infos.join(' · ').slice(0, 500);
+  }
   t.address = t.address.replace(/\bam (vormittag|nachmittag|morgen|abend)\b,?\s*/i,'').replace(/^[,\s]+/,'').trim();
   { const u = t.address.match(/^([A-ZÄÖÜ][a-zäöüéè]+)_(.+)$/); if(u) t.address = u[2] + ', ' + u[1]; }
   { const sm = t.address.match(/([A-ZÄÖÜ][\wäöüéè.\-]*?(?:strasse|str\.|gasse|weg|platz|quai|ring|allee|rain|hof|graben|bühl|buehl|matte|acker|halde|steig)\s*\d{1,4}(?:\/\d{1,4})?[a-z]?)((?:,?\s*8\d{3}\s+[A-ZÄÖÜ][a-zäöü]+)|(?:,\s*Zürich))?/);
@@ -1159,6 +1171,7 @@ function tlRow(t, start, end, opt={}){
         <div class="tl-title">${esc(t.title || 'Ohne Titel')}</div>
         ${t.address?`<div class="tl-sub">${ICON.pin}<span>${esc(t.address)}${t.room?' · '+esc(t.room):''}</span></div>`:''}
         ${t.contact?`<div class="tl-sub">${ICON.person}<span>${esc(t.contact)}</span></div>`:''}
+        ${t.techInfo && !t.done ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(t.techInfo)}</span></div>` : ''}
         ${packChips(t)}
         ${opt.conflict?`<div class="tl-warn">Zeit knapp – vorheriges Ticket endet zu spät</div>`:''}
         ${opt.late && !t.done ? `<div class="tl-warn" style="color:var(--orange)">Nach Arbeitsende (${esc(state.settings.dayEnd)})</div>`:''}
@@ -1225,6 +1238,7 @@ function renderPlan(){
         ${nxt.address?`<div class="tl-sub">${ICON.pin}<span>${esc(nxt.address)}${nxt.room?' · '+esc(nxt.room):''}</span></div>`:''}
         ${nxt.contact||nxt.phone?`<div class="tl-sub">${ICON.person}<span>${esc([nxt.contact,nxt.phone].filter(Boolean).join(' · '))}</span></div>`:''}
         ${nxt.availUntil && toMin(nxt.availUntil) <= toMin(nxt.start) ? `<div class="tl-warn">Kontakt nur bis ${esc(nxt.availUntil)} vor Ort – vorher anrufen</div>`:''}
+        ${nxt.techInfo ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(nxt.techInfo)}</span></div>` : ''}
         <div class="hacts">
           ${nxt.phone?`<a class="btn-tint" style="--c:var(--green)" href="${telUrl(nxt.phone)}">${ICON.phone}Anrufen</a>`:`<span class="btn-tint dis">${ICON.phone}Anrufen</span>`}
           ${nxt.address?`<a class="btn-tint" href="${mapsUrl(nxt.address)}" target="_blank" rel="noopener">${ICON.nav}Route</a>`:`<span class="btn-tint dis">${ICON.nav}Route</span>`}
@@ -1488,6 +1502,7 @@ function openDetail(id){
       ${t.ticket?`<button class="qa-b" data-act="copy" data-v="${esc(t.ticket)}">${ICON.copy}Nr. kopieren</button>`:`<span class="qa-b dis">${ICON.copy}Nr. kopieren</span>`}
       <button class="qa-b ${t.done?'':'green'}" data-act="done" data-id="${t.id}">${ICON.checkc}${t.done?'Wieder offen':'Erledigt'}</button>
     </div>
+    ${t.techInfo ? `<div class="techinfo big">${ICON.warn}<span><b>Info an Techniker</b><br>${esc(t.techInfo)}</span></div>` : ''}
     ${W.length?`<div class="warn" style="margin:0 0 16px">${ICON.warn}<div>${W.map(esc).join('<br>')}</div></div>`:''}
     <div class="group">${info.map(r => `<div class="row stack"><div class="k">${r[0]}</div><div class="v">${r[2]?`<a href="${esc(r[2])}">${esc(r[1])}</a>`:esc(r[1]).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>
     ${(() => { const p = packList(t);
@@ -1569,6 +1584,8 @@ function openEdit(t, mode){
       ${frow('Telefon','fPhone',t.phone,'tel','044 …')}
       ${frow('E-Mail','fEmail',t.email,'email','name@zuerich.ch','autocapitalize="off"')}
     </div>
+    <div class="glabel">Info an Techniker</div>
+    <div class="group"><textarea id="fTech" class="notes" rows="2" placeholder="Wichtige Hinweise">${esc(t.techInfo || '')}</textarea></div>
     <div class="glabel">Notizen</div>
     <div class="group"><textarea id="fNotes" class="notes" rows="3" placeholder="Notizen">${esc(t.notes)}</textarea></div>
     ${mode==='stored'?`<div class="group" style="margin-top:22px">${trow('Erledigt','fDone',t.done)}</div>`:''}
@@ -1583,7 +1600,7 @@ function saveEdit(){
     ticket: v('fTicket').toUpperCase(), date: v('fDate') || view.date, flex: $('#fFlex').checked,
     start: v('fStart'), end: v('fEnd'), dur: v('fDur') ? Math.max(5, +v('fDur')) : null,
     title: v('fTitle'), kind: v('fKind'), address: v('fAddr'), room: v('fRoom'),
-    orderId: v('fOrder'), material: v('fMat'), free: t.free && !v('fOrder'), shelf: v('fShelf').toUpperCase(), newDevice: v('fNew').toUpperCase(), oldDevice: v('fOld'), contact: v('fContact'), phone: v('fPhone') ? fmtPhone(v('fPhone')) : '', email: v('fEmail'), notes: $('#fNotes').value.trim()
+    orderId: v('fOrder'), material: v('fMat'), free: t.free && !v('fOrder'), shelf: v('fShelf').toUpperCase(), newDevice: v('fNew').toUpperCase(), oldDevice: v('fOld'), contact: v('fContact'), phone: v('fPhone') ? fmtPhone(v('fPhone')) : '', email: v('fEmail'), notes: $('#fNotes').value.trim(), techInfo: $('#fTech').value.trim()
   });
   if($('#fDone')) t.done = $('#fDone').checked;
   if(mode === 'new') state.tickets.push(t);
@@ -1653,7 +1670,7 @@ function acceptOne(id){
 
 /* ===================== KI-ERKENNUNG (Claude) ===================== */
 const AI_PROMPT = `Du liest Arbeitstickets eines IT-Technikers der Stadt Zürich (meist ausgedruckte Outlook-Termine «OIZ-SIBAP Betriebspartner», manchmal Mails oder Helix-Tickets). Erkenne ALLE Tickets und antworte NUR mit JSON, ohne weiteren Text:
-{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","availUntil":"","winFrom":"","winTo":"","vip":false,"newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
+{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","availUntil":"","techInfo":"","winFrom":"","winTo":"","vip":false,"newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
 Regeln:
 - ticket: Ticketnummer exakt (z. B. INC000004215474, WO…, REQ…, RITM…).
 - Der Betreff hat oft die Form «E1 / Nummer / Gerät / Ticketnummer / Strasse Nr / Etage Büro / Auftrag». title = der Auftragsteil, z. B. «Austausch: zrhlAFCB L16 G1 (POOL) – Standalone».
@@ -1667,6 +1684,7 @@ Regeln:
   · orderId: 6-stellige Auftrags-ID (z. B. 250880). Steht «KOSTENLOS ohne Auftrag», gibt es keine: orderId leer, free=true.
   · material: Lieferpositionen wie «1x kabellose Maus / Tastatur». Bei «Austausch: 2x HP E243i Monitor => Lenovo Monitor T24-40» ist oldDevice «2x HP E243i Monitor» und material «2x Lenovo Monitor T24-40».
   · Mehrere Aufträge wie «250955, 4200062895 + 250956, 4200063467»: orderId «250955, 250956», newDevice «4200062895, 4200063467».
+- techInfo: Text nach «Info an Techniker:» bzw. «An Techniker:» wörtlich (Hinweise an den «Stager» weglassen), sonst leer.
 - availUntil: steht z. B. «nur bis 10:00 Uhr vor Ort», dann «10:00», sonst leer.
 - winFrom/winTo: Zeitfenster aus «Ort:», z. B. «ab 11 Uhr» → winFrom «11:00»; «zwischen 13:30 und 14:00 Uhr» → «13:30»/«14:00».
 - vip: true, wenn «VIP» im Betreff steht. «Abholung:»/«Abbau:» = altes Gerät (kein Regal), «Aufbau:» = material.
@@ -1764,7 +1782,7 @@ function aiToTicket(o, fallbackDate){
     address:str(o.address), room:str(o.room), contact:str(o.contact), phone: o.phone ? fmtPhone(str(o.phone)) : '',
     email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
     notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
-    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), winFrom: hm(o.winFrom), winTo: hm(o.winTo), vip: o.vip === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
+    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), techInfo: str(o.techInfo), winFrom: hm(o.winFrom), winTo: hm(o.winTo), vip: o.vip === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
     group: parseInt(o.technician, 10) >= 1 && parseInt(o.technician, 10) <= 3 ? 'T' + parseInt(o.technician, 10) : '',
     raw: 'Mit KI erkannt (' + (state.settings.aiProvider === 'claude' ? 'Claude' : 'Gemini') + ')', done:false, ai:true };
   if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
@@ -1994,6 +2012,7 @@ function copyDay(){
     if(t.shelf || t.newDevice || t.orderId) lines.push('   '+[t.shelf && 'Regal '+t.shelf, t.newDevice, t.orderId && 'Auftrag '+t.orderId].filter(Boolean).join(' · '));
     if(t.address) lines.push('   '+t.address+(t.room?' · '+t.room:''));
     if(t.contact||t.phone) lines.push('   '+[t.contact,t.phone].filter(Boolean).join(' · '));
+    if(t.techInfo) lines.push('   ⚠ Info an Techniker: ' + t.techInfo);
     (t.scans || []).forEach(sc => lines.push('   Scan: ' + sc.code + (sc.what ? ' (' + sc.what + ')' : '')));
   });
   P.notime.forEach(t => lines.push(`?? FIX ohne Zeit ${t.ticket||''} ${t.title||''}`));
