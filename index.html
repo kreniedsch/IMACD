@@ -1047,21 +1047,19 @@ function packList(t){
   else if(kind === 'austausch' && (oldNb || oldPc)){
     const what = oldPc && !oldNb ? 'Netzteil' : 'Ladegerät';
     if(oldBrand && newBrand && oldBrand !== newBrand) add('lade', what + ' tauschen', { warn:true, hint:`Markenwechsel ${oldBrand} → ${newBrand}` });
-    else if(oldBrand && !newBrand) add('lade', what + ' prüfen', { ask:true, hint:`alt ${oldBrand} – nur bei Markenwechsel tauschen` });
   }
   if(/mit netzteil/i.test(src) && !items.some(i => i.key === 'lade')) add('netz', 'Netzteil');
   // Dock
-  if(/\bdock|docking|\bTB DS\b|usb-?c-?dock/i.test(mat + ' ' + src) || /dock/i.test(old)){
-    add('dock', /thunderbolt|\bTB\b/i.test(mat + old + src) ? 'Dock (Thunderbolt) + Netzteil' : 'Dock + Netzteil');
-    if(/mit kabel|ohne kabel/i.test(old) || /usb-?c/i.test(old)) add('dockkabel', 'USB-C-Kabel fürs Dock', { hint: /ohne kabel/i.test(old) ? 'alt ohne Kabel' : '' });
-  }
+  if(isNew && /\bdock|docking|\bTB DS\b|usb-?c-?dock/i.test(mat + ' ' + src))
+    add('dock', /thunderbolt|\bTB\b/i.test(mat + src) ? 'Dock (Thunderbolt) + Netzteil' : 'Dock + Netzteil');
+  if(kind === 'austausch' && /dock/i.test(old) && /ohne kabel/i.test(old)) add('dockkabel', 'USB-C-Kabel fürs Dock', { warn:true, hint:'altes Dock ohne Kabel' });
   // Monitore
   let mon = (String(t.newDevice || '').match(/\b42\d{8}\b/g) || []).length;   // neue Monitor-Assets zählen
   const mq = mon ? null : (mat + ' ' + src).match(/(\d+)\s?x\s?(?:\w+\s){0,3}(?:monitor|E24\d?i|T2[47])/i);
   if(mon){}
   else if(mq) mon = +mq[1];
   else if(/monitor|E24\d?i|E243i|T2[47]-/i.test(mat + ' ' + old)) mon = Math.max(1, (old.replace(/\(durch.*$/i,'').match(/E24\d?i|T2[47]-|monitor/gi) || []).length);
-  if(mon) { add('mon', (mon > 1 ? mon + '× ' : '') + 'Monitor'); add('monk', (mon > 1 ? mon + '× ' : '') + 'Monitorkabel (DP / USB-C)'); }
+  if(mon){ add('mon', (mon > 1 ? mon + '× ' : '') + 'Monitor'); if(isNew) add('monk', (mon > 1 ? mon + '× ' : '') + 'Monitorkabel (DP / USB-C)'); }
   // Maus / Tastatur (kabellos vs. kabelgebunden)
   const lc = src.toLowerCase();
   const typ = word => {
@@ -1075,6 +1073,7 @@ function packList(t){
   const hs = src.match(/headset\s*:?\s*([^+\n,;]*)/i);
   if(hs) add('head', 'Headset' + (hs[1].trim() ? ' ' + hs[1].trim().replace(/\s*-\s*/g,'-') : ''));
   if(/kamera|webcam/i.test(src)) add('cam', 'Kamera / Webcam');
+  if(/\bsim(-?karte)?\b/i.test((t.notes || '') + ' ' + src)) add('sim', 'SIM-Karte ins neue Gerät', { warn:true, hint:'laut Ticket' });
   return items;
 }
 function packText(it){ return it.label + (it.hint ? ` (${it.hint})` : ''); }
@@ -1491,16 +1490,20 @@ function openDetail(id){
     </div>
     ${W.length?`<div class="warn" style="margin:0 0 16px">${ICON.warn}<div>${W.map(esc).join('<br>')}</div></div>`:''}
     <div class="group">${info.map(r => `<div class="row stack"><div class="k">${r[0]}</div><div class="v">${r[2]?`<a href="${esc(r[2])}">${esc(r[1])}</a>`:esc(r[1]).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>
-    ${(() => { const p = packList(t); if(!p.length) return '';
-      const done = t.packed || {}, oldB = brandOf((t.oldDevice || '').replace(/\(durch.*$/i,'')), askB = p.some(i => i.ask) || (t.newBrand && /tauschen|prüfen/.test((p.find(i => i.key === 'lade') || {}).label || ''));
+    ${(() => { const p = packList(t);
+      const hostSwap = (t.kind || '').toLowerCase() === 'austausch' && (/^zrh[let]/i.test(t.oldDevice || '') || NB_RE.test(t.oldDevice || '') || PC_RE.test(t.oldDevice || ''));
+      const oldB0 = brandOf((t.oldDevice || '').replace(/\(durch.*$/i,''));
+      const brandUI = hostSwap && oldB0 ? `<div class="glabel">Marke neues Gerät (alt: ${oldB0})</div>
+          <div class="seg">${['HP','Lenovo'].map(b => `<button class="${t.newBrand === b ? 'on' : ''}" data-act="newBrand" data-id="${t.id}" data-v="${b}">${b}</button>`).join('')}</div>
+          <div class="gfoot">Nur bei Markenwechsel erscheint «Ladegerät tauschen».</div>` : '';
+      if(!p.length) return brandUI;
+      const done = t.packed || {}, oldB = brandOf((t.oldDevice || '').replace(/\(durch.*$/i,'')), askB = false;
       return `<div class="glabel">Mitnehmen</div><div class="group">` + p.map(i => `
         <div class="row tap" data-act="pack" data-id="${t.id}" data-k="${i.key}">
           <span class="chk ${done[i.key] ? 'on' : ''}" style="--c:var(--${i.warn ? 'orange' : 'green'})">${ICON.check}</span>
           <div class="k"><div class="fx1">${esc(i.label)}</div>${i.hint ? `<div class="fx2" style="color:var(--${i.warn ? 'orange' : 'label2'})">${esc(i.hint)}</div>` : ''}</div>
         </div>`).join('') + `</div>` +
-        (askB || t.newBrand ? `<div class="glabel">Marke neues Gerät${oldB ? ' (alt: ' + oldB + ')' : ''}</div>
-          <div class="seg">${['HP','Lenovo'].map(b => `<button class="${t.newBrand === b ? 'on' : ''}" data-act="newBrand" data-id="${t.id}" data-v="${b}">${b}</button>`).join('')}</div>
-          <div class="gfoot">Am Regal antippen – bei Markenwechsel erscheint «Ladegerät tauschen».</div>` : '');
+        brandUI;
     })()}
     <div class="glabel">Gescannte Geräte</div>
     <div class="group scanlist">
