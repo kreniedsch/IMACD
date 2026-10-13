@@ -2015,8 +2015,11 @@ async function exportInventory(range){
   const rows = inventoryRows(range);
   if(!rows.length){ toast('Keine Geräte im gewählten Zeitraum'); return; }
   try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
-  const cols = ['Datum','Incident/WO','Auftrag','Typ','Status','Asset-ID','Hostname','Code (anderer)','Beschreibung','Art','Standort','Etage/Büro','Kontakt','Gescannt','Erledigt'];
-  const widths = [11,18,10,11,18,13,12,14,34,11,28,22,24,9,9];
+  const cols = ['Status','Asset-ID','Hostname','Typ','Beschreibung','Incident/WO','Auftrag','Standort','Etage/Büro','Datum','Art','Kontakt','Code (anderer)','Gescannt','Erledigt'];
+  const widths = [18,13,12,11,34,18,10,28,22,11,11,24,14,9,9];
+  // Alte Geräte (zu buchen) immer zuerst
+  const rank = r => (/^Alt/.test(r.Status) ? 0 : 1);
+  rows.sort((a,b) => rank(a) - rank(b) || a.Datum.split('.').reverse().join('').localeCompare(b.Datum.split('.').reverse().join('')) || (a.Typ < b.Typ ? -1 : a.Typ > b.Typ ? 1 : 0));
   const wb = XLSX.utils.book_new();
   const sheet = (name, data) => {
     const ws = XLSX.utils.json_to_sheet(data, { header: cols });
@@ -2024,6 +2027,7 @@ async function exportInventory(range){
     ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:Math.max(data.length,1), c:cols.length-1} }) };
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
+  sheet('Alt buchen', rows.filter(r => /^Alt/.test(r.Status)));
   sheet('Host', rows.filter(r => r.Typ === 'Host'));
   sheet('Peripherie', rows.filter(r => r.Typ === 'Peripherie'));
   sheet('Alle', rows);
@@ -2036,7 +2040,7 @@ function openExport(){
   const n = r => inventoryRows(r).length;
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Inventar-Export</div><span></span></div>
-    <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>: Incident, Auftrag, Asset-ID, Hostname, Alt/Neu, Standort und Büro – für die Inventarpflege.</div>
+    <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Alt buchen</b>, <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>. Alte Geräte stehen immer zuerst, mit Asset-ID und Hostname vorne – für die Inventarpflege.</div>
     <div class="group" style="margin-top:16px">
       <div class="row tap" data-act="xlsx" data-r="day"><span class="k blue">Ausgewählter Tag (${esc(longDate(view.date))})</span><span class="v">${n('day')} Geräte</span></div>
       <div class="row tap" data-act="xlsx" data-r="week"><span class="k blue">Diese Woche</span><span class="v">${n('week')} Geräte</span></div>
