@@ -184,6 +184,9 @@ textarea.notes::placeholder{color:var(--label3)}
 .brandcard b{font-size:20px;display:block}
 .brandcard small{color:var(--label2);font-size:14px}
 .elogo{width:84px;height:84px;border-radius:20px;display:block;margin:0 auto 16px;box-shadow:0 6px 20px rgba(0,60,180,.25)}
+/* Standort-Gruppe */
+.sitehead{display:flex;align-items:center;gap:6px;margin:4px 0 8px 54px;padding:6px 10px;border-radius:10px;font-size:13px;color:var(--indigo);background:color-mix(in srgb,var(--indigo) 12%,transparent)}
+.sitehead svg{width:14px;height:14px;flex:none}
 /* Leerer Zustand */
 .empty{text-align:center;padding:44px 24px}
 .eico{width:76px;height:76px;border-radius:22px;background:var(--fill);color:var(--label2);display:grid;place-items:center;margin:0 auto 16px}
@@ -799,11 +802,12 @@ const ICON = {
 
 /* ===================== SPEICHER ===================== */
 const STORE = 'einsatzplan.v1';
-const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:20, ocrLang:'deu+eng', tech:'', nav:'google', aiOn:false, aiProvider:'gemini', aiKey:'', aiModel:'claude-sonnet-5-5', gemKey:'', gemModel:'gemini-3.6-flash' };
+const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:10, ocrLang:'deu+eng', tech:'', nav:'google', aiOn:false, aiProvider:'gemini', aiKey:'', aiModel:'claude-sonnet-5-5', gemKey:'', gemModel:'gemini-3.6-flash' };
 let state = load();
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(STORE));
+    if(s && s.settings && !s.settings.v2){ if(+s.settings.travel === 20) s.settings.travel = 10; s.settings.v2 = true; }
     if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null };
   }catch(e){}
   return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null };
@@ -823,23 +827,38 @@ function durOf(t){
   if(t.start && t.end){ const d = toMin(t.end)-toMin(t.start); if(d > 0) return d; }
   return +state.settings.dur || 45;
 }
+function siteKey(t){
+  if(!t || !t.address) return '';
+  const m = t.address.toLowerCase().replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/str(\.|asse)\b/g,'strasse')
+    .match(/([a-z][a-z.\- ]*?(?:strasse|gasse|weg|platz|quai|ring|allee|rain|hof|graben|buehl|matte|acker|halde|steig))\s*(\d{1,4})/);
+  return m ? m[1].replace(/\s+/g,'') + ' ' + m[2] : t.address.toLowerCase().replace(/\s+/g,' ').trim();
+}
 function plan(date){
   const S = state.settings;
   const all = state.tickets.filter(t => t.date === date);
   const fixed = all.filter(t => !t.flex && t.start).sort((a,b)=>toMin(a.start)-toMin(b.start));
   const notime = all.filter(t => !t.flex && !t.start);
   const doneFlex = all.filter(t => t.flex && t.done);
-  const pool = all.filter(t => t.flex && !t.done).sort((a,b)=> (a.start||'99').localeCompare(b.start||'99') || locKey(a).localeCompare(locKey(b)));
-  const travel = (a,b) => (!a || !b) ? 0 : (locKey(a) && locKey(a) === locKey(b)) ? 0 : (+S.travel || 0);
+  const pool = all.filter(t => t.flex && !t.done).sort((a,b)=> (a.start||'99').localeCompare(b.start||'99') || siteKey(a).localeCompare(siteKey(b)));
+  const sameSite = (a,b) => a && b && siteKey(a) && siteKey(a) === siteKey(b);
+  const travel = (a,b) => (!a || !b) ? 0 : (sameSite(a,b) || (locKey(a) && locKey(a) === locKey(b))) ? 0 : (+S.travel || 0);
+  const dayEnd = toMin(S.dayEnd);
   const items = [];
   let cursor = toMin(S.dayStart), last = null;
   if(date === iso(new Date())) cursor = Math.max(cursor, Math.ceil(nowMin() / 5) * 5);
   const startCursor = cursor;
 
+  const place = (t, st, extra = {}) => {
+    items.push({ type:'ticket', t, start:st, end:st+durOf(t), late: st + durOf(t) > dayEnd, ...extra });
+    cursor = Math.max(cursor, st + durOf(t)); last = t;
+    pool.includes(t) && pool.splice(pool.indexOf(t), 1);
+  };
+  // Flex-Tickets am gleichen Standort direkt mit erledigen
+  const rideAlong = anchor => { for(const f of pool.filter(f => sameSite(f, anchor))) place(f, cursor, { together:true }); };
+
   function fill(limit, nextFixed){
     for(;;){
-      let best = null, bestScore = Infinity;
-      let bestSt = 0;
+      let best = null, bestScore = Infinity, bestSt = 0;
       for(const f of pool){
         const tr = travel(last, f), st0 = cursor + tr;
         let st = f.start ? Math.max(st0, toMin(f.start)) : st0;
@@ -848,33 +867,45 @@ function plan(date){
         if(st + durOf(f) + trN > limit) continue;
         let score = tr + trN*0.5 + (st - st0)/3;
         if(f.start) score += Math.abs(toMin(f.start) - st)/6;
+        if(nextFixed && sameSite(f, nextFixed)) score -= 30;          // vor einem Fixtermin am selben Ort bevorzugen
         if(score < bestScore){ best = f; bestScore = score; bestSt = st; }
       }
       if(!best) return;
       const tr = travel(last, best);
       if(bestSt - tr - cursor >= 10) items.push({ type:'free', start:cursor, end:bestSt - tr });
       if(tr) items.push({ type:'travel', start:bestSt - tr, end:bestSt });
-      const st = bestSt;
-      items.push({ type:'ticket', t:best, start:st, end:st+durOf(best) });
-      cursor = st + durOf(best); last = best;
-      pool.splice(pool.indexOf(best), 1);
+      place(best, bestSt);
+      rideAlong(best);
     }
   }
 
   for(const fx of fixed){
     const fs = toMin(fx.start);
-    if(fs + durOf(fx) <= startCursor){ items.push({ type:'ticket', t:fx, start:fs, end:fs+durOf(fx), past:true }); continue; }
+    if(fs + durOf(fx) <= startCursor){ items.push({ type:'ticket', t:fx, start:fs, end:fs+durOf(fx), past:true }); last = fx; continue; }
     fill(fs, fx);
+    const here = sameSite(last, fx);
     const tr = travel(last, fx);
-    const conflict = cursor + tr > fs;
+    const conflict = !here && cursor > fs;                             // nur echte Überschneidung, Wegzeit ist geschätzt
     if(!conflict && fs - tr - cursor >= 10) items.push({ type:'free', start:cursor, end:fs-tr });
-    if(tr && fs > Math.max(cursor, fs-tr)) items.push({ type:'travel', start:Math.max(cursor, fs-tr), end:fs });
-    items.push({ type:'ticket', t:fx, start:fs, end:fs+durOf(fx), conflict: conflict && last ? last : null });
-    cursor = Math.max(cursor, fs + durOf(fx)); last = fx;
+    if(tr && fs - cursor >= tr) items.push({ type:'travel', start:fs-tr, end:fs });
+    place(fx, fs, { conflict: conflict && last ? last : null });
+    rideAlong(fx);
   }
-  fill(toMin(S.dayEnd), null);
+  fill(dayEnd, null);
+  // Rest nie verwerfen: hinten anhängen (nächster Standort zuerst)
+  while(pool.length){
+    const f = pool.find(x => sameSite(x, last)) || pool.find(x => travel(last, x) === 0) || pool[0];
+    const tr = travel(last, f);
+    if(tr) items.push({ type:'travel', start:cursor, end:cursor+tr });
+    place(f, cursor + tr);
+    rideAlong(f);
+  }
   items.sort((a,b) => a.start - b.start || (a.type === 'ticket' ? 1 : -1));
-  return { items, overflow:pool, doneFlex, notime, fixed, total:all.length, done:all.filter(t=>t.done).length,
+  // Standorte mit mehreren Tickets
+  const sites = {};
+  all.filter(t => !t.done && siteKey(t)).forEach(t => { const k = siteKey(t); (sites[k] ||= { address:t.address, tickets:[] }).tickets.push(t); });
+  const multi = Object.values(sites).filter(x => x.tickets.length > 1);
+  return { items, overflow:[], doneFlex, notime, fixed, multi, sites, total:all.length, done:all.filter(t=>t.done).length,
            nFix:all.filter(t=>!t.flex).length, nFlex:all.filter(t=>t.flex).length };
 }
 
@@ -908,6 +939,7 @@ function pills(t){
        + (t.shelf ? `<span class="pill blue">Regal ${esc(t.shelf)}</span>` : '')
        + (t.free ? `<span class="pill green">Kostenlos</span>` : '')
        + (t.vip ? `<span class="pill" style="--c:var(--red)">VIP</span>` : '')
+       + (t._site > 1 ? `<span class="pill" style="--c:var(--indigo)">${t._site} am Standort</span>` : '')
        + (t.done ? `<span class="pill green">Erledigt</span>` : '');
 }
 function rawBlock(raw){ return `<details class="raw"><summary>Erkannter Originaltext</summary><pre>${esc(raw)}</pre></details>`; }
@@ -932,6 +964,7 @@ function renderWeek(){
 
 /* ---------- Tagesplan ---------- */
 function tlRow(t, start, end, opt={}){
+  t._site = opt.siteCount || 0;
   return `<div class="tl-row ${t.done?'done':''}">
     <div class="tl-time">${start!=null ? `<b>${fromMin(start)}</b><span>${fromMin(end)}</span>` : `<b>–</b>`}</div>
     <div class="tl-card ${t.flex?'flex':'fix'} ${opt.now?'now':''}" data-act="detail" data-id="${t.id}">
@@ -942,6 +975,7 @@ function tlRow(t, start, end, opt={}){
         ${t.address?`<div class="tl-sub">${ICON.pin}<span>${esc(t.address)}${t.room?' · '+esc(t.room):''}</span></div>`:''}
         ${t.contact?`<div class="tl-sub">${ICON.person}<span>${esc(t.contact)}</span></div>`:''}
         ${opt.conflict?`<div class="tl-warn">Zeit knapp – vorheriges Ticket endet zu spät</div>`:''}
+        ${opt.late && !t.done ? `<div class="tl-warn" style="color:var(--orange)">Nach Arbeitsende (${esc(state.settings.dayEnd)})</div>`:''}
         ${!t.done ? warnings(t).filter(x => /^(Kontakt nur|Zeitfenster)/.test(x)).map(x => `<div class="tl-warn">${esc(x.replace(/ Vorher anrufen!$/,' – vorher anrufen'))}</div>`).join('') : ''}
       </div>
       <span class="chev">${ICON.chev}</span>
@@ -982,6 +1016,14 @@ function renderPlan(){
       <div><span class="sum-n" style="color:var(--teal)">${P.nFlex}</span><span class="sum-l">Flex</span></div>
       <div><span class="sum-n" style="color:var(--green)">${P.done}/${P.total}</span><span class="sum-l">Erledigt</span></div>
     </div><div class="pbar"><div style="width:${pct}%"></div></div></div>`;
+
+  // Mehrere Tickets am gleichen Standort
+  if(P.multi.length){
+    h += `<div class="group" style="margin-bottom:12px">` + P.multi.map(m => `
+      <div class="row ic"><span class="sq" style="--c:var(--indigo)">${ICON.pin}</span>
+        <div class="k"><div class="fx1">${m.tickets.length} Tickets am gleichen Standort</div>
+        <div class="fx2 ellip">${esc(m.address)} · ${esc(m.tickets.map(t => t.start || 'flex').join(', '))}</div></div></div>`).join('') + `</div>`;
+  }
 
   // Nächster Fixtermin
   if(P.fixed.length){
@@ -1031,13 +1073,23 @@ function renderPlan(){
 
   // Tagesablauf
   h += `<div class="glabel">Tagesablauf${isToday && nm > toMin(state.settings.dayStart) ? ' · ab jetzt geplant' : ''}</div>`;
+  let prevSite = null;
+  const tix = P.items.filter(i => i.type === 'ticket');
   for(const it of P.items){
     if(it.type === 'ticket'){
       const now = isToday && nm >= it.start && nm < it.end && !it.t.done;
-      h += tlRow(it.t, it.start, it.end, { now, conflict:!!it.conflict });
+      const sk = siteKey(it.t), idx = tix.indexOf(it);
+      if(sk && sk !== prevSite){
+        let run = 1; for(let j = idx + 1; j < tix.length && siteKey(tix[j].t) === sk; j++) run++;
+        if(run > 1) h += `<div class="sitehead">${ICON.pin}<span><b>Gleicher Standort</b> · ${esc(it.t.address)} · ${run} Tickets</span></div>`;
+      }
+      prevSite = sk;
+      h += tlRow(it.t, it.start, it.end, { now, conflict:!!it.conflict, late:it.late, together:it.together, siteCount: P.sites[sk] ? P.sites[sk].tickets.length : 0 });
     } else if(it.type === 'travel'){
+      prevSite = null;
       h += `<div class="tl-gap">${ICON.car}ca. ${fmtDur(it.end-it.start)} Weg</div>`;
     } else if(it.type === 'free'){
+      prevSite = null;
       h += `<div class="tl-gap">${ICON.clock}Frei ${fromMin(it.start)}–${fromMin(it.end)} · ${fmtDur(it.end-it.start)}</div>`;
     }
   }
