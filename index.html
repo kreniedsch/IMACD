@@ -572,7 +572,11 @@ function outlookEnhance(t, lines, text){
       if(/kostenlos|ohne auftrag/i.test(sg)){ t.free = true; continue; }
       if(/^vip\b/i.test(sg)){ t.vip = true; continue; }
       const ab = sg.match(/^(aufbau|neuinstallation|install(?:ation)?|lieferung)\s*:\s*(.+)$/i);
-      if(ab){ t.material = ab[2].trim(); t.kind = ab[1][0].toUpperCase() + ab[1].slice(1).toLowerCase(); continue; }
+      if(ab){
+        const [mat, old] = ab[2].split(/\s*\+?\s*(?:abbau|abholung|r(?:ü|ue)ckbau)\s*:\s*/i);
+        t.material = mat.trim(); if(old) t.oldDevice = old.trim();
+        t.kind = ab[1][0].toUpperCase() + ab[1].slice(1).toLowerCase(); continue;
+      }
       if(/^[\d\s,;+&]+$/.test(sg) && /\d{6}/.test(sg)){                                                                           // mehrere Aufträge
         const ids = sg.match(/\b\d{6}\b/g) || [], assets = sg.match(/\b\d{8,12}\b/g) || [];
         if(ids.length) t.orderId = [...new Set([...(t.orderId ? t.orderId.split(', ') : []), ...ids])].join(', ');
@@ -671,7 +675,8 @@ function outlookEnhance(t, lines, text){
       if(phoneOnly(l) || (isName(l) && lines[k+1] && phoneOnly(lines[k+1]))) continue;
       const letters = (l.match(/[a-zäöü]/gi) || []).length;
       if(l.length >= 8 && letters / l.length > .45){
-        const cut = l.split(/\s--\s/)[0];
+        const cut = l.split(/\s--\s/)[0].replace(/<mailto:[^>]*>/gi,'').replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g,'').replace(/\s{2,}/g,' ').trim();
+        if(cut.length < 8) continue;
         task.push(cut.replace(/\s+\S{1,2}$/,''));
         if(cut !== l) break;
       }
