@@ -1262,6 +1262,8 @@ function renderPlan(){
   const dow = new Date().getDay();
   if(state.tickets.length && lb > 1 && lb <= 7 && (dow === 5 || dow === 6 || dow === 0)) notes.push(iconRow('upload','orange','Wochenende: Backup erstellen','backup'));
   else if(state.tickets.length && lb > 7) notes.push(iconRow('upload','orange', state.lastBackup ? 'Backup ist älter als 7 Tage' : 'Noch kein Backup erstellt','backup'));
+  const miss = missingOld(state.tickets.filter(t => t.date === view.date));
+  if(miss.length) notes.unshift(iconRow('warn','orange', `<b>${miss.length} ${miss.length === 1 ? 'erledigtes Ticket' : 'erledigte Tickets'} ohne Alt-Scan</b>`, 'openMissing', 'data-v="day"'));
   if(notes.length) h += `<div class="group" style="margin-bottom:14px">${notes.join('')}</div>`;
 
   if(!P.total){
@@ -1744,6 +1746,22 @@ function noteHtml(t){
     <div class="cnbtns"><button class="btn-tint" data-act="cnCopy" data-id="${t.id}">${ICON.copy}Kopieren</button>
       <button class="btn-tint" style="--c:var(--indigo)" data-act="cnSave" data-id="${t.id}">Als Standard merken</button></div>
     <div class="gfoot">Wird beim Erledigen nicht verschickt – du kopierst den Satz und fügst ihn im Ticket ein. «Mit Test» = Login geprüft.</div>`;
+}
+const hasOldScan = t => (t.scans || []).some(x => /^Alt/.test(x.what || ''));
+function missingOld(list){ return list.filter(t => t.done && needsOldScan(t) && !hasOldScan(t) && visible(t)); }
+function inRangeT(range){ const today = iso(new Date()), ws = weekStart(today); return t => range === 'day' ? t.date === view.date : range === 'week' ? (t.date >= ws && t.date <= addDays(ws, 6)) : true; }
+function openMissing(range){
+  const L = missingOld(state.tickets.filter(inRangeT(range))).sort((a,b) => (a.date+(a.start||'')).localeCompare(b.date+(b.start||'')));
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Schliessen</button><div class="sh-title">Alt-Scan fehlt</div><span></span></div>
+    <div class="gfoot" style="margin-top:6px">Erledigte Tickets mit Austausch/Abbau, bei denen kein altes Gerät gescannt wurde. Antippen und nachscannen oder die Asset-ID im Ticket eintragen.</div>
+    <div class="group" style="margin-top:10px">${L.length ? L.map(t => `
+      <div class="row tap" data-act="detail" data-id="${t.id}">
+        <span class="sq" style="--c:var(--orange)">${ICON.warn}</span>
+        <div class="k"><div class="fx1 ellip">${esc(t.oldDevice || t.title || t.ticket || 'Ticket')}</div>
+          <div class="fx2 ellip">${esc([range === 'day' ? t.start : t.date.split('-').reverse().slice(0,2).join('.'), t.ticket, t.address].filter(Boolean).join(' · '))}</div></div>
+        <button class="callbtn" style="--green:var(--orange)" data-act="scanOld" data-id="${t.id}" aria-label="Alt scannen">${ICON.qr}</button>
+      </div>`).join('') : '<div class="row"><span class="k" style="color:var(--green);font-weight:600">Alles gescannt ✓</span></div>'}</div>`, 'missing');
 }
 const needsOldScan = t => !!(t.oldDevice || /austausch|abbau|abholung|r(ü|ue)ckbau/i.test(t.kind || ''));
 function toggleDone(id, force){
@@ -2385,6 +2403,7 @@ function openExport(){
     <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Inventar-Export</div><span></span></div>
     <div class="seg" style="margin-top:8px">${R.map(([r,l]) => `<button class="${exportRange===r?'on':''}" data-act="exRange" data-v="${r}">${l} · ${n(r)}</button>`).join('')}</div>
     <div class="gfoot">${exportRange === 'day' ? esc(longDate(view.date)) : exportRange === 'week' ? 'Diese Woche' : 'Alle gespeicherten Tickets'}${viewGroup() !== 'all' ? ' · Kalender ' + esc(viewGroup()) : ''} – davon <b>${old} alte Geräte</b> zu buchen.</div>
+    ${(() => { const m = missingOld(state.tickets.filter(inRangeT(exportRange))).length; return m ? `<div class="group" style="margin-top:14px">${iconRow('warn','orange', `<b>${m} ohne Alt-Scan</b> – zuerst nachscannen`, 'openMissing', `data-v="${exportRange}"`)}</div>` : ''; })()}
     <button class="btn-fill" style="width:100%;margin-top:16px" data-act="xlsxMail">${ICON.mail}Per Mail senden</button>
     <button class="btn-tint" style="width:100%;margin-top:10px" data-act="xlsxSave">${ICON.download}In Dateien sichern</button>
     <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Alt buchen</b>, <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>. Alte Geräte stehen immer zuerst, mit Asset-ID und Hostname vorne – für die Inventarpflege.</div>
@@ -2431,6 +2450,7 @@ document.addEventListener('click', e => {
     case 'xlsxSave': exportInventory(exportRange, 'save'); break;
     case 'shareNow': if(pendingShare) navigator.share(pendingShare).then(() => { pendingShare = null; closeSheet(); }).catch(e => { if(e.name !== 'AbortError') toast(errMsg(e)); }); break;
     case 'openExport': openExport(); break;
+    case 'openMissing': openMissing(b.dataset.v || 'day'); break;
     case 'pick': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       t.picked = !t.picked; t.packed ||= {};
