@@ -156,6 +156,15 @@ textarea.notes::placeholder{color:var(--label3)}
 /* Fixtermin-Liste */
 .fxt{width:48px;flex:none;font-weight:700;color:var(--orange);font-variant-numeric:tabular-nums}
 .fx1{font-weight:600;font-size:16px}
+.fxt.flex{color:var(--teal);font-size:14px}
+.fx3{display:flex;align-items:center;gap:4px;margin-top:3px;font-size:13px;font-weight:600;color:var(--red)}
+.fx3 svg{width:12px;height:12px;flex:none}
+.glhint{float:right;text-transform:none;letter-spacing:0;font-weight:500;display:flex;align-items:center;gap:5px}
+.dotc{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--orange)}.dotc.flex{background:var(--teal);margin-left:6px}
+.callwarn{display:flex;gap:7px;align-items:center;margin-top:8px;padding:7px 10px;border-radius:10px;font-size:14px;font-weight:600;background:color-mix(in srgb,var(--orange) 14%,transparent);color:color-mix(in srgb,var(--orange) 70%,var(--label))}
+.callwarn svg{width:15px;height:15px;flex:none;color:var(--orange)}
+.callwarn.big{margin:0 0 12px;padding:12px 14px;font-size:16px;border:1px solid color-mix(in srgb,var(--orange) 40%,transparent);align-items:flex-start}
+.callwarn.big small{font-weight:500;color:var(--label2)}
 .fx2{font-size:13px;color:var(--label2)}
 .row.done .fx1{text-decoration:line-through;color:var(--label2)}
 .row.done .fxt{color:var(--label2)}
@@ -561,7 +570,48 @@ function parseBlock(raw, fallbackDate){
   outlookEnhance(t, lines, text);
   t.group = groupOf(text);
   t.title = t.title.slice(0,100);
+  { const ca = callAhead(text); if(ca){ t.callAhead = ca.min; t.callNote = ca.note; } }
   return t;
+}
+
+/* «Vorher anrufen» erkennen: callAhead = Minuten (0 = ohne Zeitangabe), callNote = Originaltext */
+const CALL_V = '(?:an(?:zu)?rufen|anruf|rufen|ruf|telefon(?:isch|ieren)?|melden|anmelden|ankündigen|avisieren|kontaktieren|bescheid)';
+const CALL_T = '(\\d+(?:[.,]\\d+)?|eine?n?|einer|halbe[n]?|zwei|drei)\\s*(h\\b|std\\.?|stunden?|min\\.?\\b|minuten?)';
+function callAhead(text){
+  const flat = String(text || '').replace(/\\[nN]/g,' ').replace(/\s+/g,' ');
+  const num = (n, u) => {
+    n = n.toLowerCase().replace(',', '.');
+    let v = /^\d/.test(n) ? +n : /^halb/.test(n) ? 0.5 : /^zwei/.test(n) ? 2 : /^drei/.test(n) ? 3 : 1;
+    if(/^halb/.test(n) && /^(h|st)/i.test(u)) return 30;
+    return Math.round(/^(h|st)/i.test(u) ? v * 60 : v);
+  };
+  const pats = [
+    new RegExp(CALL_T + '\\s*(?:vorher|zuvor|vorgängig|im voraus|bevor|vor (?:dem )?(?:termin|besuch|eintreffen|ankunft|einsatz))[^.!?]{0,40}?' + CALL_V, 'i'),
+    new RegExp(CALL_V + '[^.!?]{0,30}?' + CALL_T + '\\s*(?:vorher|zuvor|vorgängig|im voraus|bevor|vor )', 'i'),
+    new RegExp(CALL_T + '\\s*(?:vorher|zuvor|vorgängig|im voraus)', 'i')
+  ];
+  for(const re of pats){
+    const m = flat.match(re);
+    if(m && (re !== pats[2] || new RegExp(CALL_V, 'i').test(flat.slice(Math.max(0, m.index - 60), m.index + m[0].length + 60)))){
+      const mins = num(m[1], m[2]); if(mins > 0 && mins <= 24 * 60) return { min: mins, note: m[0].trim() };
+    }
+  }
+  const g = flat.match(new RegExp('(?:vorher|zuvor|vorgängig|im voraus|kurz vor(?:her)?|vor (?:dem )?(?:termin|besuch|eintreffen|ankunft|einsatz))\\s*(?:bitte\\s*)?(?:kurz\\s*)?(?:tel\\.?\\s*)?' + CALL_V + '|' + CALL_V + '\\s*(?:sie\\s*)?(?:mich\\s*)?(?:bitte\\s*)?(?:kurz\\s*)?(?:vorher|zuvor|vorgängig|im voraus)\\b|telefonisch (?:avisieren|ankündigen|anmelden|voranmelden)', 'i'));
+  if(g){ const pre = flat.slice(Math.max(0, g.index - 50), g.index).split(/[.!?:]\s/).pop(); return { min: 0, note: (pre + g[0]).trim() }; }
+  return null;
+}
+function plannedStart(t){
+  if(t.start && !t.flex) return toMin(t.start);
+  try{ const it = plan(t.date).items.find(i => i.type === 'ticket' && i.t.id === t.id); if(it) return it.start; }catch(e){}
+  return t.start ? toMin(t.start) : null;
+}
+function callLabel(t, st){
+  if(t.callAhead == null || t.callAhead === '') return '';
+  const m = +t.callAhead;
+  let s = m ? (m % 60 === 0 ? (m/60) + ' Std.' : m > 60 ? fmtDur(m) : m + ' Min.') + ' vorher anrufen' : 'Vorher anrufen';
+  if(st == null && t.start) st = toMin(t.start);
+  if(m && st != null) s += " · um " + fromMin(st - m);
+  return s;
 }
 
 function parseWindow(t, s){
@@ -1180,6 +1230,7 @@ function tlRow(t, start, end, opt={}){
         <div class="tl-title">${esc(t.title || 'Ohne Titel')}</div>
         ${t.address?`<div class="tl-sub">${ICON.pin}<span>${esc(t.address)}${t.room?' · '+esc(t.room):''}</span></div>`:''}
         ${t.contact?`<div class="tl-sub">${ICON.person}<span>${esc(t.contact)}</span></div>`:''}
+        ${callLabel(t, start) && !t.done ? `<div class="callwarn">${ICON.phone}<span>${esc(callLabel(t, start))}</span></div>` : ''}
         ${t.techInfo && !t.done ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(t.techInfo)}</span></div>` : ''}
         ${packChips(t)}
         ${opt.conflict?`<div class="tl-warn">Zeit knapp – vorheriges Ticket endet zu spät</div>`:''}
@@ -1276,7 +1327,7 @@ function renderPlan(){
     const open = P.total - P.done;
     const ws = warnings(t).filter(x => /^(Kontakt nur|Zeitfenster)/.test(x));
     h += `<div class="hero ${t.flex ? 'flex' : ''}" data-act="detail" data-id="${t.id}">
-      <div class="hl">Nächstes Ticket · ${t.flex ? 'Flex' : 'Fix'}${cd?`<span class="cdpill">${cd}</span>`:''}<span class="hcount">${open} offen</span></div>
+      <div class="hl">Nächstes Ticket${cd?`<span class="cdpill">${cd}</span>`:''}<span class="hcount">${open} offen</span></div>
       <div class="ht">${st != null ? fromMin(st) : '–'}${t.end && !t.flex ? `<small> – ${esc(t.end)}</small>` : (nx.end != null ? `<small> – ${fromMin(nx.end)}</small>` : '')}</div>
       <div class="hpills">${pills(t)}</div>
       <div class="htitle">${esc(t.title || 'Ticket')}</div>
@@ -1284,6 +1335,7 @@ function renderPlan(){
       ${t.address?`<div class="tl-sub">${ICON.pin}<span>${esc(t.address)}${t.room?' · '+esc(t.room):''}</span></div>`:''}
       ${t.contact||t.phone?`<div class="tl-sub">${ICON.person}<span>${esc([t.contact,t.phone].filter(Boolean).join(' · '))}</span></div>`:''}
       ${t.oldDevice?`<div class="tl-sub">${ICON.scan}<span>Altgerät scannen: ${esc(t.oldDevice)}</span></div>`:''}
+      ${callLabel(t, st) && !t.done ? `<div class="callwarn">${ICON.phone}<span>${esc(callLabel(t, st))}</span></div>` : ''}
       ${t.techInfo ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(t.techInfo)}</span></div>` : ''}
       ${ws.map(x => `<div class="tl-warn">${esc(x.replace(/ Vorher anrufen!$/,' – vorher anrufen'))}</div>`).join('')}
       ${packChips(t, true)}
@@ -1297,14 +1349,21 @@ function renderPlan(){
   } else {
     h += `<div class="card allok"><span class="sq" style="--c:var(--green)">${ICON.check}</span>Alle Tickets erledigt – Feierabend!</div>`;
   }
-  if(P.fixed.length){
-    h += `<div class="glabel">Fixtermine</div><div class="group">` + P.fixed.map(f => `
-      <div class="row tap ${f.done?'done':''}" data-act="detail" data-id="${f.id}">
-        <div class="fxt">${esc(f.start)}</div>
-        <div class="k"><div class="fx1 ellip">${esc(f.contact || f.title || f.ticket || 'Fixtermin')}</div>
-          <div class="fx2 ellip">${esc([f.ticket, f.address].filter(Boolean).join(' · ') || 'Standort fehlt')}</div></div>
-        ${f.phone?`<a class="callbtn" href="${telUrl(f.phone)}" aria-label="Anrufen">${ICON.phone}</a>`:''}
-      </div>`).join('') + `</div>`;
+  // Kontakte (fix und flex) mit Anruf-Hinweis
+  {
+    const seen = new Set(), rows = [];
+    P.items.filter(i => i.type === 'ticket').forEach(i => { seen.add(i.t.id); rows.push({ t:i.t, st: i.t.start && !i.t.flex ? toMin(i.t.start) : i.start }); });
+    [...P.notime, ...P.overflow, ...P.doneFlex].forEach(t => { if(!seen.has(t.id)){ seen.add(t.id); rows.push({ t, st: t.start ? toMin(t.start) : null }); } });
+    rows.sort((x, y) => (x.st ?? 9999) - (y.st ?? 9999));
+    if(rows.length) h += `<div class="glabel">Kontakte<span class="glhint"><i class="dotc fix"></i>Fix <i class="dotc flex"></i>Flex</span></div><div class="group">` + rows.map(({ t, st }) => {
+      const cl = callLabel(t, st);
+      return `<div class="row tap ${t.done?'done':''}" data-act="detail" data-id="${t.id}">
+        <div class="fxt ${t.flex ? 'flex' : ''}">${st != null ? (t.flex ? '~' : '') + fromMin(st) : '–'}</div>
+        <div class="k"><div class="fx1 ellip">${esc(t.contact || t.title || t.ticket || 'Ticket')}</div>
+          <div class="fx2 ellip">${esc([t.ticket, t.address].filter(Boolean).join(' · ') || 'Standort fehlt')}</div>
+          ${cl && !t.done ? `<div class="fx3">${ICON.phone}${esc(cl)}</div>` : ''}</div>
+        ${t.phone?`<a class="callbtn" href="${telUrl(t.phone)}" aria-label="Anrufen">${ICON.phone}</a>`:''}
+      </div>`; }).join('') + `</div>`;
   }
 
   h += lagerAfter ? lagerHtml : '';
@@ -1525,6 +1584,7 @@ function openDetail(id){
       ${t.ticket?`<button class="qa-b" data-act="copy" data-v="${esc(t.ticket)}">${ICON.copy}Nr. kopieren</button>`:`<span class="qa-b dis">${ICON.copy}Nr. kopieren</span>`}
       <button class="qa-b ${t.done?'':'green'}" data-act="done" data-id="${t.id}">${ICON.checkc}${t.done?'Wieder offen':'Erledigt'}</button>
     </div>
+    ${callLabel(t, plannedStart(t)) ? `<div class="callwarn big">${ICON.phone}<span><b>${esc(callLabel(t, plannedStart(t)))}</b>${t.callNote ? `<br><small>«${esc(t.callNote)}»</small>` : ''}</span></div>` : ''}
     ${t.techInfo ? `<div class="techinfo big">${ICON.warn}<span><b>Info an Techniker</b><br>${esc(t.techInfo)}</span></div>` : ''}
     ${W.length?`<div class="warn" style="margin:0 0 16px">${ICON.warn}<div>${W.map(esc).join('<br>')}</div></div>`:''}
     <div class="group">${info.map(r => `<div class="row stack"><div class="k">${r[0]}</div><div class="v">${r[2]?`<a href="${esc(r[2])}">${esc(r[1])}</a>`:esc(r[1]).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>
@@ -1606,6 +1666,7 @@ function openEdit(t, mode){
       ${frow('Kontakt','fContact',t.contact,'text','Name')}
       ${frow('Telefon','fPhone',t.phone,'tel','044 …')}
       ${frow('E-Mail','fEmail',t.email,'email','name@zuerich.ch','autocapitalize="off"')}
+      <div class="row"><label class="k" for="fCall">Vorher anrufen</label><select id="fCall">${[['','Nein'],['0','Ja'],['15','15 Min. vorher'],['30','30 Min. vorher'],['60','1 Std. vorher'],['120','2 Std. vorher']].concat(t.callAhead != null && t.callAhead !== '' && ![0,15,30,60,120].includes(+t.callAhead) ? [[String(t.callAhead), t.callAhead + ' Min. vorher']] : []).map(([v,l]) => `<option value="${v}" ${String(t.callAhead ?? '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     </div>
     <div class="glabel">Info an Techniker</div>
     <div class="group"><textarea id="fTech" class="notes" rows="2" placeholder="Wichtige Hinweise">${esc(t.techInfo || '')}</textarea></div>
@@ -1623,7 +1684,7 @@ function saveEdit(){
     ticket: v('fTicket').toUpperCase(), date: v('fDate') || view.date, flex: $('#fFlex').checked,
     start: v('fStart'), end: v('fEnd'), dur: v('fDur') ? Math.max(5, +v('fDur')) : null,
     title: v('fTitle'), kind: v('fKind'), address: v('fAddr'), room: v('fRoom'),
-    orderId: v('fOrder'), material: v('fMat'), free: t.free && !v('fOrder'), shelf: v('fShelf').toUpperCase(), newDevice: v('fNew').toUpperCase(), oldDevice: v('fOld'), contact: v('fContact'), phone: v('fPhone') ? fmtPhone(v('fPhone')) : '', email: v('fEmail'), notes: $('#fNotes').value.trim(), techInfo: $('#fTech').value.trim()
+    orderId: v('fOrder'), material: v('fMat'), free: t.free && !v('fOrder'), shelf: v('fShelf').toUpperCase(), newDevice: v('fNew').toUpperCase(), oldDevice: v('fOld'), contact: v('fContact'), phone: v('fPhone') ? fmtPhone(v('fPhone')) : '', email: v('fEmail'), notes: $('#fNotes').value.trim(), techInfo: $('#fTech').value.trim(), callAhead: $('#fCall').value === '' ? null : +$('#fCall').value
   });
   if($('#fDone')) t.done = $('#fDone').checked;
   if(mode === 'new') state.tickets.push(t);
@@ -1694,7 +1755,7 @@ function acceptOne(id){
 
 /* ===================== KI-ERKENNUNG (Claude) ===================== */
 const AI_PROMPT = `Du liest Arbeitstickets eines IT-Technikers der Stadt Zürich (meist ausgedruckte Outlook-Termine «OIZ-SIBAP Betriebspartner», manchmal Mails oder Helix-Tickets). Erkenne ALLE Tickets und antworte NUR mit JSON, ohne weiteren Text:
-{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","availUntil":"","techInfo":"","winFrom":"","winTo":"","vip":false,"newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
+{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","availUntil":"","techInfo":"","callAhead":null,"winFrom":"","winTo":"","vip":false,"newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
 Regeln:
 - ticket: Ticketnummer exakt (z. B. INC000004215474, WO…, REQ…, RITM…).
 - Der Betreff hat oft die Form «E1 / Nummer / Gerät / Ticketnummer / Strasse Nr / Etage Büro / Auftrag». title = der Auftragsteil, z. B. «Austausch: zrhlAFCB L16 G1 (POOL) – Standalone».
@@ -1708,6 +1769,7 @@ Regeln:
   · orderId: 6-stellige Auftrags-ID (z. B. 250880). Steht «KOSTENLOS ohne Auftrag», gibt es keine: orderId leer, free=true.
   · material: Lieferpositionen wie «1x kabellose Maus / Tastatur». Bei «Austausch: 2x HP E243i Monitor => Lenovo Monitor T24-40» ist oldDevice «2x HP E243i Monitor» und material «2x Lenovo Monitor T24-40».
   · Mehrere Aufträge wie «250955, 4200062895 + 250956, 4200063467»: orderId «250955, 250956», newDevice «4200062895, 4200063467».
+- callAhead: Wenn der Kunde vorher angerufen werden will: Minuten vorher als Zahl (z. B. 60 bei «1h vorher anrufen»), 0 wenn ohne Zeitangabe, sonst null.
 - techInfo: Text nach «Info an Techniker:» bzw. «An Techniker:» wörtlich (Hinweise an den «Stager» weglassen), sonst leer.
 - availUntil: steht z. B. «nur bis 10:00 Uhr vor Ort», dann «10:00», sonst leer.
 - winFrom/winTo: Zeitfenster aus «Ort:», z. B. «ab 11 Uhr» → winFrom «11:00»; «zwischen 13:30 und 14:00 Uhr» → «13:30»/«14:00».
@@ -1806,7 +1868,7 @@ function aiToTicket(o, fallbackDate){
     address:str(o.address), room:str(o.room), contact:str(o.contact), phone: o.phone ? fmtPhone(str(o.phone)) : '',
     email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
     notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
-    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), techInfo: str(o.techInfo), winFrom: hm(o.winFrom), winTo: hm(o.winTo), vip: o.vip === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
+    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), techInfo: str(o.techInfo), callAhead: Number.isFinite(+o.callAhead) && o.callAhead !== null && o.callAhead !== '' ? +o.callAhead : null, winFrom: hm(o.winFrom), winTo: hm(o.winTo), vip: o.vip === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
     group: parseInt(o.technician, 10) >= 1 && parseInt(o.technician, 10) <= 3 ? 'T' + parseInt(o.technician, 10) : '',
     raw: 'Mit KI erkannt (' + (state.settings.aiProvider === 'claude' ? 'Claude' : 'Gemini') + ')', done:false, ai:true };
   if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
@@ -2036,6 +2098,7 @@ function copyDay(){
     if(t.shelf || t.newDevice || t.orderId) lines.push('   '+[t.shelf && 'Regal '+t.shelf, t.newDevice, t.orderId && 'Auftrag '+t.orderId].filter(Boolean).join(' · '));
     if(t.address) lines.push('   '+t.address+(t.room?' · '+t.room:''));
     if(t.contact||t.phone) lines.push('   '+[t.contact,t.phone].filter(Boolean).join(' · '));
+    if(callLabel(t)) lines.push('   ☎ ' + callLabel(t));
     if(t.techInfo) lines.push('   ⚠ Info an Techniker: ' + t.techInfo);
     (t.scans || []).forEach(sc => lines.push('   Scan: ' + sc.code + (sc.what ? ' (' + sc.what + ')' : '')));
   });
