@@ -529,8 +529,13 @@ function outlookEnhance(t, lines, text){
     const end = stop > bi ? stop : Math.min(lines.length, bi + 5);
     const parts = [];
     for(let k = bi; k < end; k++){
-      let l = lines[k].replace(/^.*?\b(betreff|subject)\s*:?\s*/i,'').replace(/^\W{0,3}(ort|location)\s*:\s*/i,'');
-      l = l.replace(/\bam (vormittag|nachmittag|morgen|abend)\b/i, m => { t.notes = (t.notes ? t.notes+'\n' : '') + 'Zeitfenster: ' + m; return ''; });
+      let l = lines[k].replace(/^.*?\b(betreff|subject)\s*:?\s*/i,'');
+      const om = l.match(/^\W{0,3}(ort|location)\s*:\s*(.*)$/i);
+      if(om){
+        if(!/\s\/\s/.test(om[2])){ if(om[2].trim()) t.notes = (t.notes ? t.notes+'\n' : '') + 'Ort: ' + om[2].trim(); continue; }
+        l = om[2];
+      }
+      l = l.replace(/^\s*am (vormittag|nachmittag|morgen|abend)\s*$/i, m => { t.notes = (t.notes ? t.notes+'\n' : '') + 'Zeitfenster: ' + m.trim(); return ''; });
       if(l.trim()) parts.push(l.trim());
     }
     betreff = parts.join(' ').replace(/\s+/g,' ').trim();
@@ -540,14 +545,25 @@ function outlookEnhance(t, lines, text){
     for(let i = 0; i < segs.length; i++){
       const sg = segs[i], num = sg.replace(/[Oo]/g,'0').replace(/\s/g,'');
       const was = inMat; inMat = false;
-      if(/kostenlos|ohne auftrag/i.test(sg)){ t.free = true; continue; }                                                       // ohne Auftrags-ID
+      if(/kostenlos|ohne auftrag/i.test(sg)){ t.free = true; continue; }
+      if(/^[\d\s,;+&]+$/.test(sg) && /\d{6}/.test(sg)){                                                                           // mehrere Aufträge
+        const ids = sg.match(/\b\d{6}\b/g) || [], assets = sg.match(/\b\d{8,12}\b/g) || [];
+        if(ids.length) t.orderId = [...new Set([...(t.orderId ? t.orderId.split(', ') : []), ...ids])].join(', ');
+        if(assets.length) t.newDevice = [...new Set([...(t.newDevice ? t.newDevice.split(', ') : []), ...assets])].join(', ');
+        continue;
+      }                                                       // ohne Auftrags-ID
       if(/^[A-Z][0-9lI|T]{1,2}$/.test(sg) && !t.shelf){ t.shelf = sg[0] + sg.slice(1).replace(/[lI|T]/g,'1'); continue; }   // Regalplatz
       if(/^\d{6}$/.test(num) && !t.orderId){ t.orderId = num; continue; }                                                     // Auftrags-ID
       if(/^\d{8,12}$/.test(num) && !t.newDevice){ t.newDevice = num; continue; }                                               // Asset-ID
       if(/^zrh[l1I][a-z0-9]{3,5}$/i.test(sg) && !t.newDevice){ t.newDevice = sg.toUpperCase().replace(/^ZRH[1I]/,'ZRHL'); continue; } // Hostname
       if(new RegExp('^'+TICKET_RE.source+'$','i').test(sg)) continue;
       const od = sg.match(/^(austausch|abbau|r(?:ü|ue)ckbau|ersatz|entsorgung)\s*:?\s*(.+)$/i);
-      if(od){ t.oldDevice = od[2].replace(/\s\d{5,}\b/g,'').trim(); continue; }                                               // Altes Gerät
+      if(od){
+        const parts = od[2].replace(/\s\d{5,}\b/g,'').split(/\s*(?:=>|->|→)\s*/);
+        t.oldDevice = parts[0].trim();
+        if(parts[1]){ const q = parts[0].match(/^(\d+\s?x)\s/i); t.material = (q ? q[1].replace(/\s/,'') + ' ' : '') + parts[1].replace(/[;,.]\s*$/,'').trim(); }
+        continue;
+      }                                               // Altes Gerät
       if(/(strasse|str\.|gasse|weg|platz|quai|ring|allee|rain|hof|graben|bühl|buehl|matte|acker|halde|steig)\s*\d/i.test(sg)){
         if(!gotAddr){
           gotAddr = true;
@@ -578,10 +594,20 @@ function outlookEnhance(t, lines, text){
   const emailOnly = l => /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/.test(l.trim());
   const contacts = [];
   for(let k = from; k < lines.length - 1; k++){
-    const m = isName(lines[k]); if(!m || /betriebspartner|service|desk/i.test(m[1])) continue;
+    let line = lines[k], pre = '';
+    const pc = line.match(/^(.{4,60}?):\s*([A-ZÄÖÜ].*)$/);
+    if(pc && !isName(line) && isName(pc[2])){ pre = pc[1].trim(); line = pc[2]; }
+    const m = isName(line); if(!m || /betriebspartner|service|desk/i.test(m[1])) continue;
     let j = k + 1, email = '', phones = [];
-    if(lines[j] && emailOnly(lines[j])){ email = lines[j].trim(); j++; }
-    while(lines[j] && phoneOnly(lines[j]) && phones.length < 3){ phones.push(fmtPhone(lines[j].replace(/^t(?:el)?\.?:?\s*/i,''))); j++; }
+    while(lines[j] && (phoneOnly(lines[j]) || emailOnly(lines[j])) && j < k + 5){
+      if(emailOnly(lines[j])){ if(!email) email = lines[j].trim(); }
+      else if(phones.length < 3) phones.push(fmtPhone(lines[j].replace(/^t(?:el)?\.?:?\s*/i,'')));
+      j++;
+    }
+    if(pre){
+      t.notes = (t.notes ? t.notes+'\n' : '') + 'Kontakt: ' + pre;
+      const ub = pre.match(/(?:nur )?bis\s*(\d{1,2})[:.](\d{2})/i); if(ub && !t.availUntil) t.availUntil = pad2(ub[1])+':'+ub[2];
+    }
     if(!phones.length && !email) continue;
     contacts.push({ name: m[1] + (m[2] ? ' ('+m[2]+')' : ''), email, phones, line:k, lines:[...Array(j-k).keys()].map(x => x+k) });
     k = j - 1;
@@ -611,6 +637,8 @@ function outlookEnhance(t, lines, text){
     }
   }
   if(task.length) t.notes = (t.notes ? t.notes+'\n' : '') + 'Auftrag: ' + task.join(' ');
+  const map = lines.map(l => l.match(/^(\d{6})\s*[–—-]\s*([a-z][a-z0-9]{3,10})\s*$/i)).filter(Boolean);
+  if(map.length) t.notes += (t.notes ? '\n' : '') + 'Benutzer: ' + map.map(m => m[1]+' → '+m[2]).join(', ');
   const ach = lines.findIndex(l => /^achtung\s*:/i.test(l));
   if(ach >= 0) t.notes += (t.notes ? '\n' : '') + lines[ach] + (lines[ach+1] && !/:/.test(lines[ach+1]) ? ' ' + lines[ach+1] : '');
   const be = text.match(/bestellempf(?:ä|ae|a)nger\s*:\s*([^\n]+)/i);
@@ -687,7 +715,8 @@ function locKey(t){
 function warnings(t){
   const w = [];
   if(!t.flex && !t.start) w.push('Fixtermin ohne Uhrzeit – bitte Zeit eintragen oder auf Flex stellen.');
-  if(!t.ticket) w.push('Keine Ticketnummer erkannt.');
+  if(t.availUntil && t.start && toMin(t.availUntil) <= toMin(t.start)) w.push(`Kontakt nur bis ${t.availUntil} vor Ort – Termin beginnt ${t.start}. Vorher anrufen!`);
+  if(!t.ticket && !t.orderId) w.push('Keine Ticket- oder Auftragsnummer erkannt.');
   if(!t.address) w.push('Kein Standort erkannt.');
   return w;
 }
@@ -853,11 +882,12 @@ function tlRow(t, start, end, opt={}){
     <div class="tl-card ${t.flex?'flex':'fix'} ${opt.now?'now':''}" data-act="detail" data-id="${t.id}">
       <button class="chk ${t.done?'on':''}" data-act="done" data-id="${t.id}" aria-label="Als erledigt markieren">${ICON.check}</button>
       <div class="tl-body">
-        <div class="tl-top">${pills(t)}${t.ticket?`<span class="tno">${esc(t.ticket)}</span>`:''}</div>
+        <div class="tl-top">${pills(t)}${t.ticket||t.orderId?`<span class="tno">${esc(t.ticket || 'Auftrag '+t.orderId)}</span>`:''}</div>
         <div class="tl-title">${esc(t.title || 'Ohne Titel')}</div>
         ${t.address?`<div class="tl-sub">${ICON.pin}<span>${esc(t.address)}${t.room?' · '+esc(t.room):''}</span></div>`:''}
         ${t.contact?`<div class="tl-sub">${ICON.person}<span>${esc(t.contact)}</span></div>`:''}
         ${opt.conflict?`<div class="tl-warn">Zeit knapp – vorheriges Ticket endet zu spät</div>`:''}
+        ${t.availUntil && t.start && toMin(t.availUntil) <= toMin(t.start) && !t.done ? `<div class="tl-warn">Kontakt nur bis ${esc(t.availUntil)} vor Ort – vorher anrufen</div>`:''}
       </div>
       <span class="chev">${ICON.chev}</span>
     </div>
@@ -911,6 +941,7 @@ function renderPlan(){
         ${nxt.ticket?`<div class="hs">${esc(nxt.ticket)}</div>`:''}
         ${nxt.address?`<div class="tl-sub">${ICON.pin}<span>${esc(nxt.address)}${nxt.room?' · '+esc(nxt.room):''}</span></div>`:''}
         ${nxt.contact||nxt.phone?`<div class="tl-sub">${ICON.person}<span>${esc([nxt.contact,nxt.phone].filter(Boolean).join(' · '))}</span></div>`:''}
+        ${nxt.availUntil && toMin(nxt.availUntil) <= toMin(nxt.start) ? `<div class="tl-warn">Kontakt nur bis ${esc(nxt.availUntil)} vor Ort – vorher anrufen</div>`:''}
         <div class="hacts">
           ${nxt.phone?`<a class="btn-tint" style="--c:var(--green)" href="${telUrl(nxt.phone)}">${ICON.phone}Anrufen</a>`:`<span class="btn-tint dis">${ICON.phone}Anrufen</span>`}
           ${nxt.address?`<a class="btn-tint" href="${mapsUrl(nxt.address)}" target="_blank" rel="noopener">${ICON.nav}Route</a>`:`<span class="btn-tint dis">${ICON.nav}Route</span>`}
@@ -991,7 +1022,7 @@ function renderScan(){
   if(!state.pending.length){ el.innerHTML = ''; return; }
   let h = `<div class="glabel">Zu prüfen · ${state.pending.length}<button class="txtbtn bold" data-act="acceptAll">Alle übernehmen</button></div>`;
   for(const t of state.pending){
-    const dup = t.ticket && state.tickets.some(x => x.ticket === t.ticket && x.date === t.date);
+    const dup = (t.ticket || t.orderId) && state.tickets.some(x => (x.ticket || x.orderId) === (t.ticket || t.orderId) && x.date === t.date);
     const W = warnings(t);
     const dd = t.date.slice(8,10)+'.'+t.date.slice(5,7)+'.';
     h += `<div class="pcard ${t.flex?'flex':'fix'}">
@@ -1237,7 +1268,8 @@ function toast(msg){
 /* ===================== ÜBERNEHMEN ===================== */
 function acceptOne(id){
   const p = state.pending.find(x => x.id === id); if(!p) return;
-  const ex = p.ticket && state.tickets.find(x => x.ticket === p.ticket && x.date === p.date);
+  const key = x => x.ticket || x.orderId;
+  const ex = key(p) && state.tickets.find(x => key(x) === key(p) && x.date === p.date);
   if(ex) Object.assign(ex, { ...p, id:ex.id, done:ex.done, notes: ex.notes || p.notes });
   else state.tickets.push(p);
   state.pending = state.pending.filter(x => x.id !== id);
@@ -1245,7 +1277,7 @@ function acceptOne(id){
 
 /* ===================== KI-ERKENNUNG (Claude) ===================== */
 const AI_PROMPT = `Du liest Arbeitstickets eines IT-Technikers der Stadt Zürich (meist ausgedruckte Outlook-Termine «OIZ-SIBAP Betriebspartner», manchmal Mails oder Helix-Tickets). Erkenne ALLE Tickets und antworte NUR mit JSON, ohne weiteren Text:
-{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
+{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","availUntil":"","newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
 Regeln:
 - ticket: Ticketnummer exakt (z. B. INC000004215474, WO…, REQ…, RITM…).
 - Der Betreff hat oft die Form «E1 / Nummer / Gerät / Ticketnummer / Strasse Nr / Etage Büro / Auftrag». title = der Auftragsteil, z. B. «Austausch: zrhlAFCB L16 G1 (POOL) – Standalone».
@@ -1257,7 +1289,9 @@ Regeln:
 - Der Betreff besteht aus Teilen, getrennt durch «/». Die Reihenfolge kann wechseln – ordne jeden Teil nach seinem Muster zu:
   · shelf: Regalplatz der Ware, Buchstabe + Zahl am Anfang (z. B. «C1», «B2»). Bei Abbau fehlt er.
   · orderId: 6-stellige Auftrags-ID (z. B. 250880). Steht «KOSTENLOS ohne Auftrag», gibt es keine: orderId leer, free=true.
-  · material: Lieferpositionen wie «1x kabellose Maus / Tastatur».
+  · material: Lieferpositionen wie «1x kabellose Maus / Tastatur». Bei «Austausch: 2x HP E243i Monitor => Lenovo Monitor T24-40» ist oldDevice «2x HP E243i Monitor» und material «2x Lenovo Monitor T24-40».
+  · Mehrere Aufträge wie «250955, 4200062895 + 250956, 4200063467»: orderId «250955, 250956», newDevice «4200062895, 4200063467».
+- availUntil: steht z. B. «nur bis 10:00 Uhr vor Ort», dann «10:00», sonst leer.
   · newDevice: neues Gerät – Hostname (z. B. ZRHLAC52) ODER Asset-ID aus 8–12 Ziffern (z. B. 6200036652).
   · ticket: INC/WO/REQ-Nummer.
   · address und room: Strasse/Nr. sowie Etage/Büro.
@@ -1313,7 +1347,7 @@ function aiToTicket(o, fallbackDate){
     address:str(o.address), room:str(o.room), contact:str(o.contact), phone: o.phone ? fmtPhone(str(o.phone)) : '',
     email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
     notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
-    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
+    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
     raw: 'Mit KI erkannt (Claude)', done:false, ai:true };
   if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
   return t;
