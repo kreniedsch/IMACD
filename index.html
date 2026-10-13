@@ -785,7 +785,7 @@ function groupOf(text){
   if(/post/i.test(k) || /VERSAND:/.test(text)) return 'Post';
   return '';
 }
-const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['Post','Post'],['all','Alle']];
+const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['all','Alle']];
 const viewGroup = () => state.settings.view || 'all';
 const visible = t => viewGroup() === 'all' || (t.group || '') === viewGroup();
 function isForMe(text, myTech){
@@ -874,6 +874,7 @@ function load(){
       s.settings.v3 = true;
     }
     if(s && s.settings && !s.settings.v2){ if(+s.settings.travel === 20) s.settings.travel = 10; s.settings.v2 = true; }
+    if(s && Array.isArray(s.tickets)){ s.tickets = s.tickets.filter(t => t.group !== 'Post'); if(s.settings && s.settings.view === 'Post') s.settings.view = 'all'; }
     if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null };
   }catch(e){}
   return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null };
@@ -1768,7 +1769,7 @@ async function processBatch(files){
         }catch(err){ console.error(err); toast('KI: '+errMsg(err)+' – lokale Erkennung wird verwendet'); await new Promise(r => setTimeout(r, 1200)); }
       }
       if(f.type === 'text/calendar' || /\.ics$/i.test(f.name)){
-        const ts = icsToBlocks(await f.text()).filter(b => b.replace(/\s/g,'').length >= 15).map(b => parseBlock(b, date));
+        const ts = icsToBlocks(await f.text()).filter(b => b.replace(/\s/g,'').length >= 15).map(b => parseBlock(b, date)).filter(t => t.group !== 'Post');   // Post-Versand wird nicht gebraucht
         const cnt = {}; let firstDate = null;
         for(const t of ts){ state.pending.push(t); acceptOne(t.id); cnt[t.group || 'Andere'] = (cnt[t.group || 'Andere'] || 0) + 1; firstDate ||= t.date; }
         save();
