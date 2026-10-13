@@ -135,12 +135,21 @@ textarea.notes::placeholder{color:var(--label3)}
 .hero{position:relative;background:var(--card);border-radius:20px;padding:16px 16px 16px 20px;margin-bottom:12px;overflow:hidden;cursor:pointer}
 .hero::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--orange)}
 .hl{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--orange);text-transform:uppercase;letter-spacing:.03em}
-.cdpill{background:color-mix(in srgb,var(--orange) 15%,transparent);border-radius:999px;padding:2px 9px;text-transform:none;letter-spacing:0}
+.cdpill{white-space:nowrap;background:color-mix(in srgb,var(--orange) 15%,transparent);border-radius:999px;padding:2px 9px;text-transform:none;letter-spacing:0}
 .ht{font-size:42px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:6px}
 .ht small{font-size:22px;color:var(--label2);font-weight:600}
 .htitle{font-size:17px;font-weight:600;margin-top:4px}
 .hs{font-size:14px;color:var(--label2);font-variant-numeric:tabular-nums}
 .hacts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.hacts.h3{grid-template-columns:1fr 1fr 1fr}
+.hacts.h3 .btn-tint{padding-left:6px;padding-right:6px}
+.hero.flex::before{background:var(--teal)}
+.hero.flex .hl{color:var(--teal)}
+.hero.flex .cdpill{white-space:nowrap;background:color-mix(in srgb,var(--teal) 15%,transparent)}
+.hcount{margin-left:auto;white-space:nowrap;color:var(--label2);text-transform:none;letter-spacing:0;font-weight:500}
+.hpills{margin-top:6px}
+.hnext{margin-top:12px;padding-top:10px;border-top:.5px solid var(--sep,rgba(60,60,67,.2));font-size:14px;color:var(--label2)}
+.hnext b{color:var(--label);font-variant-numeric:tabular-nums}
 .allok{display:flex;align-items:center;gap:12px;font-weight:600}
 .allok .sq{border-radius:50%}
 
@@ -1224,50 +1233,17 @@ function renderPlan(){
         <div class="fx2 ellip">${esc(m.address)} · ${esc(m.tickets.map(t => t.start || 'flex').join(', '))}</div></div></div>`).join('') + `</div>`;
   }
 
-  // Nächster Fixtermin
-  if(P.fixed.length){
-    const nxt = P.fixed.find(f => !f.done && (!isToday || toMin(f.start) + durOf(f) > nm));
-    if(nxt){
-      let cd = '';
-      if(isToday){ const diff = toMin(nxt.start) - nm; cd = diff <= 0 ? 'läuft jetzt' : 'in ' + fmtDur(diff); }
-      h += `<div class="hero" data-act="detail" data-id="${nxt.id}">
-        <div class="hl">Nächster Fixtermin${cd?`<span class="cdpill">${cd}</span>`:''}</div>
-        <div class="ht">${esc(nxt.start)}${nxt.end?`<small> – ${esc(nxt.end)}</small>`:''}</div>
-        <div class="htitle">${esc(nxt.title || 'Fixtermin')}</div>
-        ${nxt.ticket?`<div class="hs">${esc(nxt.ticket)}</div>`:''}
-        ${nxt.address?`<div class="tl-sub">${ICON.pin}<span>${esc(nxt.address)}${nxt.room?' · '+esc(nxt.room):''}</span></div>`:''}
-        ${nxt.contact||nxt.phone?`<div class="tl-sub">${ICON.person}<span>${esc([nxt.contact,nxt.phone].filter(Boolean).join(' · '))}</span></div>`:''}
-        ${nxt.availUntil && toMin(nxt.availUntil) <= toMin(nxt.start) ? `<div class="tl-warn">Kontakt nur bis ${esc(nxt.availUntil)} vor Ort – vorher anrufen</div>`:''}
-        ${nxt.techInfo ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(nxt.techInfo)}</span></div>` : ''}
-        <div class="hacts">
-          ${nxt.phone?`<a class="btn-tint" style="--c:var(--green)" href="${telUrl(nxt.phone)}">${ICON.phone}Anrufen</a>`:`<span class="btn-tint dis">${ICON.phone}Anrufen</span>`}
-          ${nxt.address?`<a class="btn-tint" href="${mapsUrl(nxt.address)}" target="_blank" rel="noopener">${ICON.nav}Route</a>`:`<span class="btn-tint dis">${ICON.nav}Route</span>`}
-        </div>
-      </div>`;
-    } else {
-      const open = P.fixed.filter(f => !f.done).length;
-      h += open
-        ? `<div class="card allok"><span class="sq" style="--c:var(--orange)">${ICON.clock}</span>Keine weiteren Fixtermine · ${open} noch nicht abgehakt</div>`
-        : `<div class="card allok"><span class="sq" style="--c:var(--green)">${ICON.check}</span>Alle Fixtermine erledigt</div>`;
-    }
-    h += `<div class="glabel">Fixtermine</div><div class="group">` + P.fixed.map(f => `
-      <div class="row tap ${f.done?'done':''}" data-act="detail" data-id="${f.id}">
-        <div class="fxt">${esc(f.start)}</div>
-        <div class="k"><div class="fx1 ellip">${esc(f.contact || f.title || f.ticket || 'Fixtermin')}</div>
-          <div class="fx2 ellip">${esc([f.ticket, f.address].filter(Boolean).join(' · ') || 'Standort fehlt')}</div></div>
-        ${f.phone?`<a class="callbtn" href="${telUrl(f.phone)}" aria-label="Anrufen">${ICON.phone}</a>`:''}
-      </div>`).join('') + `</div>`;
-  }
-
-  // Material aus dem Lager – antippen = eingepackt
+  // Material aus dem Lager (vor Tourbeginn oben, danach unten)
+  let L = '';
+  // – antippen = eingepackt
   const matAll = state.tickets.filter(t => t.date === view.date && t.shelf && visible(t) && !t.done)
     .sort((a,b) => (!!a.picked - !!b.picked) || a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
   if(matAll.length){
     const np = matAll.filter(t => t.picked).length, all = np === matAll.length;
-    h += `<div class="glabel">Aus dem Lager holen<span class="lagerprog ${all ? 'done' : ''}">${np}/${matAll.length}</span></div>
+    L += `<div class="glabel">Aus dem Lager holen<span class="lagerprog ${all ? 'done' : ''}">${np}/${matAll.length}</span></div>
       <div class="pbar lagerbar"><div style="width:${Math.round(np / matAll.length * 100)}%"></div></div>`;
-    if(all) h += `<div class="card allok" style="margin-top:8px"><span class="sq" style="--c:var(--plum)">${ICON.check}</span>Alles eingepackt – gute Fahrt!</div>`;
-    h += `<div class="group" style="margin-top:8px">` + matAll.map(t => `
+    if(all) L += `<div class="card allok" style="margin-top:8px"><span class="sq" style="--c:var(--plum)">${ICON.check}</span>Alles eingepackt – gute Fahrt!</div>`;
+    L += `<div class="group" style="margin-top:8px">` + matAll.map(t => `
       <div class="row tap lagerrow ${t.picked ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
         <button class="shelfbtn ${t.picked ? 'on' : ''}" data-act="pick" data-id="${t.id}" aria-label="Regal ${esc(t.shelf)} eingepackt">
           ${t.picked ? ICON.check : ''}<span>${esc(t.shelf)}</span></button>
@@ -1283,8 +1259,55 @@ function renderPlan(){
       tot[base] = tot[base] || { n:0, warn:false }; tot[base].n += n; tot[base].warn ||= !!i.warn;
     }));
     const tk = Object.keys(tot);
-    if(tk.length) h += `<div class="gfoot" style="margin-top:8px"><b>Noch mitnehmen:</b> ${tk.map(k => `${tot[k].warn ? '⚠ ' : ''}${tot[k].n > 1 ? tot[k].n + '× ' : ''}${esc(k)}`).join(' · ')}</div>`;
+    if(tk.length) L += `<div class="gfoot" style="margin-top:8px"><b>Noch mitnehmen:</b> ${tk.map(k => `${tot[k].warn ? '⚠ ' : ''}${tot[k].n > 1 ? tot[k].n + '× ' : ''}${esc(k)}`).join(' · ')}</div>`;
   }
+
+  const lagerHtml = L, lagerAfter = P.done > 0 || !matAll.length || matAll.every(t => t.picked);
+  if(!lagerAfter) h += lagerHtml;
+
+  // Nächstes Ticket (fix oder flex) – gross oben
+  const order = [...P.items.filter(i => i.type === 'ticket'), ...P.notime.map(t => ({ t })), ...P.overflow.map(t => ({ t }))];
+  const nx = order.find(i => !i.t.done);
+  if(nx){
+    const t = nx.t, ix = order.indexOf(nx), after = order.slice(ix + 1).find(i => !i.t.done);
+    const st = t.start ? toMin(t.start) : nx.start;
+    let cd = '';
+    if(isToday && st != null){ const diff = st - nm; cd = diff <= 0 ? (t.flex ? 'jetzt' : 'läuft jetzt') : 'in ' + fmtDur(diff); }
+    const open = P.total - P.done;
+    const ws = warnings(t).filter(x => /^(Kontakt nur|Zeitfenster)/.test(x));
+    h += `<div class="hero ${t.flex ? 'flex' : ''}" data-act="detail" data-id="${t.id}">
+      <div class="hl">Nächstes Ticket · ${t.flex ? 'Flex' : 'Fix'}${cd?`<span class="cdpill">${cd}</span>`:''}<span class="hcount">${open} offen</span></div>
+      <div class="ht">${st != null ? fromMin(st) : '–'}${t.end && !t.flex ? `<small> – ${esc(t.end)}</small>` : (nx.end != null ? `<small> – ${fromMin(nx.end)}</small>` : '')}</div>
+      <div class="hpills">${pills(t)}</div>
+      <div class="htitle">${esc(t.title || 'Ticket')}</div>
+      ${t.ticket||t.orderId?`<div class="hs">${esc([t.ticket, t.orderId ? 'Auftrag '+t.orderId : ''].filter(Boolean).join(' · '))}</div>`:''}
+      ${t.address?`<div class="tl-sub">${ICON.pin}<span>${esc(t.address)}${t.room?' · '+esc(t.room):''}</span></div>`:''}
+      ${t.contact||t.phone?`<div class="tl-sub">${ICON.person}<span>${esc([t.contact,t.phone].filter(Boolean).join(' · '))}</span></div>`:''}
+      ${t.oldDevice?`<div class="tl-sub">${ICON.scan}<span>Altgerät scannen: ${esc(t.oldDevice)}</span></div>`:''}
+      ${t.techInfo ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(t.techInfo)}</span></div>` : ''}
+      ${ws.map(x => `<div class="tl-warn">${esc(x.replace(/ Vorher anrufen!$/,' – vorher anrufen'))}</div>`).join('')}
+      ${packChips(t, true)}
+      <div class="hacts h3">
+        ${t.phone?`<a class="btn-tint" style="--c:var(--green)" href="${telUrl(t.phone)}">${ICON.phone}Anrufen</a>`:`<span class="btn-tint dis">${ICON.phone}Anrufen</span>`}
+        ${t.address?`<a class="btn-tint" href="${mapsUrl(t.address)}" target="_blank" rel="noopener">${ICON.nav}Route</a>`:`<span class="btn-tint dis">${ICON.nav}Route</span>`}
+        <button class="btn-tint" style="--c:var(--green)" data-act="done" data-id="${t.id}">${ICON.checkc}Erledigt</button>
+      </div>
+      ${after ? `<div class="hnext">Danach: <b>${after.start != null ? fromMin(after.start) : (after.t.start || '–')}</b> ${esc(after.t.title || after.t.ticket || 'Ticket')}${after.t.address ? ' · ' + esc(after.t.address) : ''}</div>` : ''}
+    </div>`;
+  } else {
+    h += `<div class="card allok"><span class="sq" style="--c:var(--green)">${ICON.check}</span>Alle Tickets erledigt – Feierabend!</div>`;
+  }
+  if(P.fixed.length){
+    h += `<div class="glabel">Fixtermine</div><div class="group">` + P.fixed.map(f => `
+      <div class="row tap ${f.done?'done':''}" data-act="detail" data-id="${f.id}">
+        <div class="fxt">${esc(f.start)}</div>
+        <div class="k"><div class="fx1 ellip">${esc(f.contact || f.title || f.ticket || 'Fixtermin')}</div>
+          <div class="fx2 ellip">${esc([f.ticket, f.address].filter(Boolean).join(' · ') || 'Standort fehlt')}</div></div>
+        ${f.phone?`<a class="callbtn" href="${telUrl(f.phone)}" aria-label="Anrufen">${ICON.phone}</a>`:''}
+      </div>`).join('') + `</div>`;
+  }
+
+  h += lagerAfter ? lagerHtml : '';
 
   // Tagesablauf
   h += `<div class="glabel">Tagesablauf</div>`;
@@ -1630,6 +1653,7 @@ function toggleDone(id, force){
   if(!t.done && !force && needsOldScan(t)){ openFinish(id); return; }
   t.done = !t.done; if(t.done) t.doneAt = new Date().toISOString();
   save(); renderPlan();
+  if(t.done && view.tab === 'plan' && !(sheetMode||'').endsWith(id)){ window.scrollTo({ top:0, behavior:'smooth' }); toast('Erledigt – nächstes Ticket oben'); }
   if(sheetMode === 'detail:'+id || sheetMode === 'finish:'+id) openDetail(id);
 }
 function openFinish(id){
