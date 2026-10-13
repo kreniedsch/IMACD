@@ -667,7 +667,7 @@ function outlookEnhance(t, lines, text){
     for(let k = ki + 1; k < lines.length && task.length < 3; k++){
       const l = lines[k];
       if(/bitte beschreiben|konnten sie|wie k(ö|o)nnen wir|haben sie f|^arbeitsauftrag|^automatische bestellung|^[-–•\s]*bestellempf/i.test(l)) break;
-      if(contactLines.has(k) || /^(kontakt|kontaktperson|oder|und)\s*:?$/i.test(l) || /:\s*$/.test(l) || isName(l)) continue;
+      if(contactLines.has(k) || /^quelle:/i.test(l) || /^(kontakt|kontaktperson|oder|und)\s*:?$/i.test(l) || /:\s*$/.test(l) || isName(l)) continue;
       if(phoneOnly(l) || (isName(l) && lines[k+1] && phoneOnly(lines[k+1]))) continue;
       const letters = (l.match(/[a-zäöü]/gi) || []).length;
       if(l.length >= 8 && letters / l.length > .45){
@@ -726,11 +726,12 @@ function icsToBlocks(ics){
     const [ey,emo,ed] = (en ? en.date : '').split('-');
     return [
       'Betreff: '+val(e,'SUMMARY'),
+      val(e,'LOCATION') ? 'Ort: '+val(e,'LOCATION').replace(/\s+/g,' ') : '',
       s ? `Beginn: ${d}.${mo}.${y} ${s.time}` : '',
       en && en.time ? `Ende: ${ed}.${emo}.${ey} ${en.time}` : '',
-      val(e,'LOCATION') ? 'Standort: '+val(e,'LOCATION') : '',
       val(e,'CATEGORIES') ? 'Kategorien: '+val(e,'CATEGORIES').replace(/,/g,'; ') : '',
-      val(e,'DESCRIPTION')
+      val(e,'DESCRIPTION'),
+      'Quelle: Kalender'
     ].filter(Boolean).join('\n');
   });
 }
@@ -741,7 +742,9 @@ const TECH_RE = /\btechniker(?:in)?\s*[:#\-]?\s*(\d{1,2})\b|\btech\.?\s*(\d{1,2}
 function techNumbers(text){ return [...String(text).matchAll(TECH_RE)].map(m => +(m[1]||m[2])); }
 function isForMe(text, myTech){
   if(!myTech) return true;
-  const n = techNumbers(text);
+  const kat = String(text).match(/^\W{0,3}(?:kategorien|categories)\s*:?(.*)$/im);
+  const n = techNumbers(kat && /techn/i.test(kat[1]) ? kat[1] : text);
+  if(!n.length && /Quelle: Kalender/.test(text)) return false;     // Kalender: Termine ohne Techniker (Post, Infos) auslassen
   return !n.length || n.includes(+myTech);
 }
 
