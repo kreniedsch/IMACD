@@ -598,12 +598,16 @@ function outlookEnhance(t, lines, text){
 
   t.address = t.address.replace(/\bam (vormittag|nachmittag|morgen|abend)\b,?\s*/i,'').replace(/^[,\s]+/,'').trim();
   { const u = t.address.match(/^([A-ZÄÖÜ][a-zäöüéè]+)_(.+)$/); if(u) t.address = u[2] + ', ' + u[1]; }
+  { const sm = t.address.match(/([A-ZÄÖÜ][\wäöüéè.\-]*?(?:strasse|str\.|gasse|weg|platz|quai|ring|allee|rain|hof|graben|bühl|buehl|matte|acker|halde|steig)\s*\d{1,4}(?:\/\d{1,4})?[a-z]?)((?:,?\s*8\d{3}\s+[A-ZÄÖÜ][a-zäöü]+)|(?:,\s*Zürich))?/);
+    if(sm) t.address = sm[1] + (sm[2] ? (sm[2].startsWith(',') ? sm[2] : ', ' + sm[2].trim()) : ''); }
+  t.room = t.room.split(/,\s*/).filter(r => !/\b(ja|nein|siehe)\b/i.test(r)).join(', ');
 
   // Kontaktperson: Name (evtl. mit Benutzerkürzel) direkt über einer Telefonnummer
   const nameRe = /^([A-ZÄÖÜ][a-zäöüéèàç'-]+(?:\s+[A-ZÄÖÜ][a-zäöüéèàç'-]+){1,2})(?:\s+([a-z][a-z0-9]{3,10}))?[\s.,:;]*$/;
   const phoneOnly = l => /^(?:t(?:el)?\.?:?\s*)?(?:\+|00)?[\d\s()\/.-]{9,}$/i.test(l.trim());
   const isName = l => { const m = l.match(nameRe); if(!m) return null;
     if(/^(bitte|client|auf|der|die|das|neue[rs]?|ger(ä|a)t|hallo|danke|termin|kein|nicht)$/i.test(m[1].split(/\s+/)[0])) return null;
+    if(/\b(docking|station|monitor|notebook|laptop|tastatur|maus|headset|drucker|kontaktperson|kontakt|falls|notfall|fragen|lieferung|abholung|standort|etage|büro|buero|windows|software|hardware|zubehör|ladegerät|kabel)\b/i.test(m[1])) return null;
     if(m[2] && /\.\s*$/.test(l)) return null; return m; };
   const ki = lines.findIndex(l => /^\W{0,3}(kategorien|categories)\b/i.test(l));
   const from = ki >= 0 ? ki + 1 : 0;
@@ -664,13 +668,17 @@ function outlookEnhance(t, lines, text){
   if(bi >= 0 || ki >= 0){
     if(betreffTitle) t.title = betreffTitle;
     else if(t.material) t.title = 'Lieferung: ' + t.material;
-    else if(task.length) t.title = task.join(' ');
+    else {
+      const good = task.find(l => !/kontakt|notfall|fragen|telefon|erfassen|abgeholt|[!{}|]{1,}/i.test(l) && l.split(/\s+/).length >= 3 && (l.match(/[a-zäöü]/gi)||[]).length / l.length > .65);
+      if(good) t.title = good;
+    }
   }
   t.title = t.title.replace(/(\s+[^\w\s(]{1,2})+$/,'').replace(/\s+[A-Za-zÄÖÜäöü]$/,'').trim();
-  if(t.title && (t.title.match(/[a-zäöü]/gi) || []).length / t.title.length < .4) t.title = t.material ? 'Lieferung: ' + t.material : (task[0] || '');
+  if(t.title && (t.title.match(/[a-zäöü]/gi) || []).length / t.title.length < .4) t.title = t.material ? 'Lieferung: ' + t.material : '';
   const k2 = (t.title + ' ' + text).match(KIND_RE);
   if(k2){ const w = k2[1].toLowerCase(); t.kind = /^stag/.test(w) ? 'Staging' : /^z/.test(w) ? 'Umzug' : /lieferung/.test(w) ? 'Lieferung' : w[0].toUpperCase()+w.slice(1); }
   if(t.title.startsWith('Lieferung')) t.kind = 'Lieferung';
+  if(!t.title) t.title = [t.kind, t.oldDevice || t.material || t.newDevice].filter(Boolean).join(': ') || 'Ticket';
 }
 
 /* Outlook-Kalender (.ics) → ein Textblock pro Termin */
@@ -800,10 +808,13 @@ function plan(date){
   const all = state.tickets.filter(t => t.date === date);
   const fixed = all.filter(t => !t.flex && t.start).sort((a,b)=>toMin(a.start)-toMin(b.start));
   const notime = all.filter(t => !t.flex && !t.start);
-  const pool = all.filter(t => t.flex).sort((a,b)=> (a.start||'99').localeCompare(b.start||'99') || locKey(a).localeCompare(locKey(b)));
+  const doneFlex = all.filter(t => t.flex && t.done);
+  const pool = all.filter(t => t.flex && !t.done).sort((a,b)=> (a.start||'99').localeCompare(b.start||'99') || locKey(a).localeCompare(locKey(b)));
   const travel = (a,b) => (!a || !b) ? 0 : (locKey(a) && locKey(a) === locKey(b)) ? 0 : (+S.travel || 0);
   const items = [];
   let cursor = toMin(S.dayStart), last = null;
+  if(date === iso(new Date())) cursor = Math.max(cursor, Math.ceil(nowMin() / 5) * 5);
+  const startCursor = cursor;
 
   function fill(limit, nextFixed){
     for(;;){
@@ -832,6 +843,7 @@ function plan(date){
 
   for(const fx of fixed){
     const fs = toMin(fx.start);
+    if(fs + durOf(fx) <= startCursor){ items.push({ type:'ticket', t:fx, start:fs, end:fs+durOf(fx), past:true }); continue; }
     fill(fs, fx);
     const tr = travel(last, fx);
     const conflict = cursor + tr > fs;
@@ -841,7 +853,8 @@ function plan(date){
     cursor = Math.max(cursor, fs + durOf(fx)); last = fx;
   }
   fill(toMin(S.dayEnd), null);
-  return { items, overflow:pool, notime, fixed, total:all.length, done:all.filter(t=>t.done).length,
+  items.sort((a,b) => a.start - b.start || (a.type === 'ticket' ? 1 : -1));
+  return { items, overflow:pool, doneFlex, notime, fixed, total:all.length, done:all.filter(t=>t.done).length,
            nFix:all.filter(t=>!t.flex).length, nFlex:all.filter(t=>t.flex).length };
 }
 
@@ -996,7 +1009,7 @@ function renderPlan(){
   }
 
   // Tagesablauf
-  h += `<div class="glabel">Tagesablauf</div>`;
+  h += `<div class="glabel">Tagesablauf${isToday && nm > toMin(state.settings.dayStart) ? ' · ab jetzt geplant' : ''}</div>`;
   for(const it of P.items){
     if(it.type === 'ticket'){
       const now = isToday && nm >= it.start && nm < it.end && !it.t.done;
@@ -1006,6 +1019,10 @@ function renderPlan(){
     } else if(it.type === 'free'){
       h += `<div class="tl-gap">${ICON.clock}Frei ${fromMin(it.start)}–${fromMin(it.end)} · ${fmtDur(it.end-it.start)}</div>`;
     }
+  }
+  if(P.doneFlex.length){
+    h += `<div class="glabel">Erledigt (Flex)</div>`;
+    P.doneFlex.forEach(t => h += tlRow(t, null, null));
   }
   if(P.notime.length){
     h += `<div class="glabel">Fix, Uhrzeit fehlt</div>`;
@@ -1355,30 +1372,42 @@ async function imageToJpegB64(file){
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
   return blobToB64(blob);
 }
+const GEM_FALLBACK = ['gemini-3.6-flash','gemini-3.8-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3-flash-preview'];
 async function aiExtractGemini(input){
   const S = state.settings;
   let part;
   if(typeof input === 'string') part = { text:'Ticket-Text:\n\n' + input };
   else if(input.type === 'application/pdf' || /\.pdf$/i.test(input.name)) part = { inline_data:{ mime_type:'application/pdf', data: await blobToB64(input) } };
   else part = { inline_data:{ mime_type:'image/jpeg', data: await imageToJpegB64(input) } };
-  const model = (S.gemModel || DEFAULTS.gemModel).trim();
-  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
-    method:'POST',
-    headers:{ 'content-type':'application/json', 'x-goog-api-key':S.gemKey },
-    body: JSON.stringify({ contents:[{ role:'user', parts:[part, { text:AI_PROMPT }] }], generationConfig:{ responseMimeType:'application/json', temperature:0 } })
-  });
-  const data = await r.json().catch(() => ({}));
-  if(!r.ok){
-    const msg = data.error && data.error.message || ('HTTP '+r.status);
-    if(r.status === 400 && /api key/i.test(msg)) throw new Error('API-Key ungültig');
-    if(r.status === 404) throw new Error('Modell «'+model+'» nicht gefunden – in den Einstellungen anpassen');
-    if(r.status === 429) throw new Error('Gratis-Kontingent für heute aufgebraucht');
-    throw new Error(msg);
+  const models = [...new Set([(S.gemModel || DEFAULTS.gemModel).trim(), ...GEM_FALLBACK])];
+  let lastErr = null;
+  for(const model of models){
+    for(let attempt = 0; attempt < 2; attempt++){
+      setProg(progLabel + ' – KI liest (' + model + ') …', 0.3 + attempt * 0.2);
+      let r, data;
+      try{
+        r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
+          method:'POST',
+          headers:{ 'content-type':'application/json', 'x-goog-api-key':S.gemKey },
+          body: JSON.stringify({ contents:[{ role:'user', parts:[part, { text:AI_PROMPT }] }], generationConfig:{ responseMimeType:'application/json', temperature:0 } })
+        });
+        data = await r.json().catch(() => ({}));
+      }catch(e){ lastErr = new Error('Keine Verbindung zur KI'); await new Promise(z => setTimeout(z, 1200)); continue; }
+      if(r.ok){
+        const txt = ((data.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');
+        const m = txt.match(/\{[\s\S]*\}/); if(!m){ lastErr = new Error('KI-Antwort nicht lesbar'); break; }
+        const j = JSON.parse(m[0]);
+        return Array.isArray(j.tickets) ? j.tickets : [];
+      }
+      const msg = data.error && data.error.message || ('HTTP '+r.status);
+      if((r.status === 400 || r.status === 403) && /api key|permission|unauthori/i.test(msg)) throw new Error('API-Key ungültig');
+      lastErr = new Error(r.status === 429 ? 'Gratis-Kontingent aufgebraucht' : r.status >= 500 || /demand|overload|unavailable/i.test(msg) ? 'KI gerade überlastet' : msg);
+      if(r.status === 404 || r.status === 400) break;                         // Modell nicht verfügbar → nächstes
+      if(r.status === 429) break;                                              // eigenes Kontingent pro Modell → nächstes
+      await new Promise(z => setTimeout(z, 1500 * (attempt + 1)));             // überlastet → kurz warten, nochmals
+    }
   }
-  const txt = ((data.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');
-  const m = txt.match(/\{[\s\S]*\}/); if(!m) throw new Error('KI-Antwort nicht lesbar');
-  const j = JSON.parse(m[0]);
-  return Array.isArray(j.tickets) ? j.tickets : [];
+  throw lastErr || new Error('KI nicht erreichbar');
 }
 async function aiExtract(input){
   const S = state.settings;
