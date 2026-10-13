@@ -1717,29 +1717,39 @@ function openPaste(){
 /* ---------- Notiz fürs Ticket (Standardsätze) ---------- */
 function devWord(t){
   const d = [t.oldDevice, t.newDevice, t.title, t.material].filter(Boolean).join(' ');
-  if(/dock/i.test(d)) return { w:'Dock', art:'Die' };
+  if(/dock/i.test(d)) return { w:'Dockingstation', art:'Die' };
   if(/monitor|bildschirm|display/i.test(d) && !NB_RE.test(t.oldDevice||'')) return { w:'Monitor', art:'Der' };
   if(PC_RE.test(t.oldDevice || '') && !NB_RE.test(t.oldDevice || '')) return { w:'Computer', art:'Der' };
   return { w:'Notebook', art:'Das' };
 }
 function noteKind(t){
-  const k = (t.kind || t.title || '').toLowerCase();
-  if(/abbau|abholung|abholen|r(ü|ue)ckbau|r(ü|ue)cknahme|entsorg|dispose/.test(k)) return 'abbau';
-  if(/lieferung|aufbau|ausliefern|install|rollout/.test(k)) return 'lieferung';
-  return 'austausch';
+  const k = ((t.kind || '') + ' ' + (t.kind ? '' : t.title || '')).toLowerCase();
+  if(/umzug|z(ü|ue)gel|move/.test(k)) return 'umzug';
+  if(/abholung|abholen|r(ü|ue)cknahme|entsorg|dispose/.test(k)) return 'abholung';
+  if(/abbau|r(ü|ue)ckbau/.test(k)) return 'abbau';
+  if(/aufbau|install|rollout/.test(k)) return 'aufbau';
+  if(/lieferung|ausliefern/.test(k)) return 'lieferung';
+  if(/austausch|ersatz|change/.test(k)) return 'austausch';
+  return 'andere';
 }
+// Arbeitsplatz bei Aufbau/Umzug; bei Abbau nur, wenn kein Gerät erkannt
+function noteSubject(t, kind){
+  if(kind === 'aufbau' || kind === 'umzug') return { w:'Arbeitsplatz', art:'Der' };
+  if(kind === 'abbau' && !(t.oldDevice || t.newDevice)) return { w:'Arbeitsplatz', art:'Der' };
+  return devWord(t);
+}
+const NOTE_VERB = { austausch:'ersetzt', lieferung:'geliefert', aufbau:'aufgebaut', umzug:'gezügelt', abbau:'abgebaut', abholung:'abgeholt' };
+const noteCanTest = k => k !== 'abbau' && k !== 'abholung';
 function noteDefault(t, test){
-  const key = noteKind(t) + '|' + test, custom = (state.settings.noteTpl || {})[key];
-  const { w, art } = devWord(t);
+  const kind = noteKind(t), key = kind + '|' + (noteCanTest(kind) ? test : 'ohne');
+  const { w, art } = noteSubject(t, kind), custom = (state.settings.noteTpl || {})[key];
   if(custom) return custom.replace(/\{gerät\}/gi, w).replace(/\{art\}/gi, art);
-  const k = noteKind(t);
-  if(k === 'abbau') return `${art} ${w} wurde abgeholt.`;
-  if(k === 'lieferung') return test === 'mit' ? `${art} ${w} wurde geliefert und eingerichtet. Login erfolgreich, alles i.O.` : `${art} ${w} wurde geliefert.`;
-  return test === 'mit' ? `${art} ${w} wurde ersetzt. Alles i.O.` : `${art} ${w} wurde ersetzt.`;
+  const base = kind === 'andere' ? 'Der Auftrag wurde erledigt.' : `${art} ${w} wurde ${NOTE_VERB[kind]}.`;
+  return test === 'mit' && noteCanTest(kind) ? base + ' Alles i.O.' : base;
 }
 function noteText(t){ return t.closeNote != null ? t.closeNote : noteDefault(t, t.closeTest || 'mit'); }
 function noteHtml(t){
-  const test = t.closeTest || 'mit', canTest = noteKind(t) !== 'abbau';
+  const test = t.closeTest || 'mit', canTest = noteCanTest(noteKind(t));
   return `<div class="glabel">Notiz fürs Ticket</div>
     ${canTest ? `<div class="seg" id="cnSeg">${[['ohne','Ohne Test'],['mit','Mit Test (Login OK)']].map(([v,l]) => `<button class="${test === v ? 'on' : ''}" data-act="cnTest" data-id="${t.id}" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
     <div class="group" style="margin-top:8px"><textarea id="cnText" class="notes" rows="3" data-id="${t.id}">${esc(noteText(t))}</textarea></div>
@@ -2438,9 +2448,9 @@ document.addEventListener('click', e => {
     case 'cnSave': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       const txt = ($('#cnText').value || '').trim(); if(!txt) break;
-      const { w, art } = devWord(t);
+      const kind = noteKind(t), { w, art } = noteSubject(t, kind);
       const tpl = txt.split(w).join('{Gerät}').split(art + ' {Gerät}').join('{Art} {Gerät}');
-      state.settings.noteTpl = { ...(state.settings.noteTpl || {}), [noteKind(t) + '|' + (t.closeTest || 'mit')]: tpl };
+      state.settings.noteTpl = { ...(state.settings.noteTpl || {}), [kind + '|' + (noteCanTest(kind) ? (t.closeTest || 'mit') : 'ohne')]: tpl };
       save(); toast('Als Standard gemerkt'); break;
     }
     case 'scanNew': openScanner('new', id); break;
