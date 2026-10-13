@@ -442,7 +442,7 @@ function parseBlock(raw, fallbackDate){
   if(phoneCands.length && phoneCands[0].s > -1) t.phone = fmtPhone(phoneCands[0].v);
 
   // Kontaktperson
-  const c = labeled(lines, /\b(kontakt\s?person|kontakt|ansprech\s?(?:partner(?:in)?|person)|endbenutzer(?:in)?|benutzer(?:in)?|betroffene[r]?(?:\s?person)?|anwender(?:in)?|melder(?:in)?|requested for|contact|customer|user)\b\s*[:\-]?/i, 60);
+  const c = labeled(lines, /^\W{0,3}(kontakt\s?person|kontakt|ansprech\s?(?:partner(?:in)?|person)|endbenutzer(?:in)?|benutzer(?:in)?|betroffene[r]?(?:\s?person)?|anwender(?:in)?|melder(?:in)?|requested for|contact|customer|user)\b\s*[:\-]?/i, 60);
   if(c){
     let v = c.v.replace(phoneRe,'').replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/,'')
                .replace(/\b(tel(?:efon)?|mobile|natel|handy|e-?mail|phone|fax)\b.*$/i,'')
@@ -515,8 +515,10 @@ function outlookEnhance(t, lines, text){
   const dts = [];
   lines.forEach((l,i) => { const m = l.match(dtRe); if(m) dts.push({ i, l, date:`${m[3]}-${pad2(m[2])}-${pad2(m[1])}`, time:pad2(m[4])+':'+m[5] }); });
   if(dts.length){
-    const b = dts.find(d => /beginn|start/i.test(d.l)) || dts[0];
-    const e = dts.find(d => /\bende?\b/i.test(d.l) && d !== b) || dts.find(d => d !== b && d.i > b.i);
+    const okT = d => { const h = +d.time.slice(0,2); return h >= 5 && h <= 21; };
+    const valid = dts.filter(okT).length ? dts.filter(okT) : dts;
+    const day = valid[0].date, same = valid.filter(d => d.date === day).sort((x,y) => toMin(x.time) - toMin(y.time));
+    const b = same[0], e = same.length > 1 ? same[same.length-1] : null;
     t.date = b.date; t.start = b.time; t.end = e && e.date === b.date && toMin(e.time) > toMin(b.time) ? e.time : '';
     t.dur = t.end ? toMin(t.end) - toMin(t.start) : null;
   }
@@ -539,6 +541,13 @@ function outlookEnhance(t, lines, text){
       if(l.trim()) parts.push(l.trim());
     }
     betreff = parts.join(' ').replace(/\s+/g,' ').trim();
+    const ortCut = betreff.match(/\s(?:[o0][rn]?t\s*:?\s*)?\b(?:a?m\s+)?(?:vormittag|nachmittag|morgen\b|abend\b)[^/]*$/i)
+                || betreff.match(/\s[^/]*\b(?:melden|sekretariat|falls fragen)\b[^/]*$/i);
+    if(ortCut){
+      const o = ortCut[0].replace(/^\s*[o0][rn]?t\s*:?\s*/i,'').replace(/^m\s/i,'am ').trim();
+      if(o) t.notes = (t.notes ? t.notes+'\n' : '') + 'Ort: ' + o;
+      betreff = betreff.slice(0, ortCut.index).trim();
+    }
     if(betreff) t.notes = 'Betreff: ' + betreff + (t.notes ? '\n'+t.notes : '');
     const segs = betreff.split(/\s\/\s|\s\/(?!\d)|(?<!\d)\/\s|\s--\s/).map(x => x.trim()).filter(Boolean);
     let inMat = false, gotAddr = false, gotRoom = false;
@@ -559,7 +568,13 @@ function outlookEnhance(t, lines, text){
       if(new RegExp('^'+TICKET_RE.source+'$','i').test(sg)) continue;
       const od = sg.match(/^(austausch|abbau|r(?:ü|ue)ckbau|ersatz|entsorgung)\s*:?\s*(.+)$/i);
       if(od){
-        const parts = od[2].replace(/\s\d{5,}\b/g,'').split(/\s*(?:=>|->|→)\s*/);
+        let parts = od[2].replace(/\s\d{5,}\b/g,'').split(/\s*(?:=\s?>|-\s?>|→|»|=)\s*/);
+        if(parts.length < 2){
+          const BR = /\b(Lenovo|HP|Dell|Apple|Samsung|Logitech|Jabra|Fujitsu|Microsoft|Philips|Eizo|Poly|Yealink)\b/g;
+          const hits = [...od[2].matchAll(BR)];
+          if(hits.length >= 2 && hits[1][0] !== hits[0][0]) parts = [od[2].slice(0, hits[1].index), od[2].slice(hits[1].index)];
+        }
+        parts = parts.map(p => p.replace(/\bMonitor\s+[1lI]([23]\d[a-z]?-\d{2})\b/g, 'Monitor T$1'));
         t.oldDevice = parts[0].trim();
         if(parts[1]){ const q = parts[0].match(/^(\d+\s?x)\s/i); t.material = (q ? q[1].replace(/\s/,'') + ' ' : '') + parts[1].replace(/[;,.]\s*$/,'').trim(); }
         continue;
@@ -578,6 +593,7 @@ function outlookEnhance(t, lines, text){
     }
     const km = betreff.match(new RegExp(KIND_RE.source + '\\s*:\\s*([^/]+)', 'i'));
     if(km) betreffTitle = (km[1][0].toUpperCase() + km[1].slice(1) + ': ' + km[2].replace(/\s\d{5,}\b/g,'')).replace(/\s*--\s*/g,' – ').trim();
+    if(km && t.oldDevice && t.material) betreffTitle = km[1][0].toUpperCase() + km[1].slice(1) + ': ' + t.oldDevice + ' → ' + t.material.replace(/^\d+x\s/,'');
   }
 
   t.address = t.address.replace(/\bam (vormittag|nachmittag|morgen|abend)\b,?\s*/i,'').replace(/^[,\s]+/,'').trim();
@@ -608,7 +624,7 @@ function outlookEnhance(t, lines, text){
       t.notes = (t.notes ? t.notes+'\n' : '') + 'Kontakt: ' + pre;
       const ub = pre.match(/(?:nur )?bis\s*(\d{1,2})[:.](\d{2})/i); if(ub && !t.availUntil) t.availUntil = pad2(ub[1])+':'+ub[2];
     }
-    if(!phones.length && !email) continue;
+    if(!phones.length && !email && !pre) continue;
     contacts.push({ name: m[1] + (m[2] ? ' ('+m[2]+')' : ''), email, phones, line:k, lines:[...Array(j-k).keys()].map(x => x+k) });
     k = j - 1;
   }
