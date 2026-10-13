@@ -850,10 +850,12 @@ function siteKey(t){
 function plan(date){
   const S = state.settings;
   const all = state.tickets.filter(t => t.date === date);
-  const fixed = all.filter(t => !t.flex && t.start).sort((a,b)=>toMin(a.start)-toMin(b.start));
+  // Alles mit Uhrzeit steht zu seiner Zeit (auch Flex – die Dispo hat es so geplant)
+  const timed = all.filter(t => t.start).sort((a,b)=>toMin(a.start)-toMin(b.start) || (a.flex - b.flex));
+  const fixed = timed.filter(t => !t.flex);
   const notime = all.filter(t => !t.flex && !t.start);
-  const doneFlex = all.filter(t => t.flex && t.done);
-  const pool = all.filter(t => t.flex && !t.done).sort((a,b)=> (a.start||'99').localeCompare(b.start||'99') || siteKey(a).localeCompare(siteKey(b)));
+  const doneFlex = all.filter(t => t.flex && !t.start && t.done);
+  const pool = all.filter(t => t.flex && !t.start && !t.done).sort((a,b)=> (a.start||'99').localeCompare(b.start||'99') || siteKey(a).localeCompare(siteKey(b)));
   const sameSite = (a,b) => a && b && siteKey(a) && siteKey(a) === siteKey(b);
   const travel = (a,b) => (!a || !b) ? 0 : (sameSite(a,b) || (locKey(a) && locKey(a) === locKey(b))) ? 0 : (+S.travel || 0);
   const dayEnd = toMin(S.dayEnd);
@@ -893,16 +895,16 @@ function plan(date){
     }
   }
 
-  for(const fx of fixed){
+  for(const fx of timed){
     const fs = toMin(fx.start);
     if(fs + durOf(fx) <= startCursor){ items.push({ type:'ticket', t:fx, start:fs, end:fs+durOf(fx), past:true }); last = fx; continue; }
     fill(fs, fx);
     const here = sameSite(last, fx);
     const tr = travel(last, fx);
-    const conflict = !here && cursor > fs;                             // nur echte Überschneidung, Wegzeit ist geschätzt
+    const conflict = !here && cursor > fs && !fx.flex && last && !last.flex;   // nur echte Überschneidung zweier Fixtermine
     if(!conflict && fs - tr - cursor >= 10) items.push({ type:'free', start:cursor, end:fs-tr });
     if(tr && fs - cursor >= tr) items.push({ type:'travel', start:fs-tr, end:fs });
-    place(fx, fs, { conflict: conflict && last ? last : null });
+    place(fx, fs, { conflict: conflict ? last : null });
     rideAlong(fx);
   }
   fill(dayEnd, null);
@@ -1086,7 +1088,7 @@ function renderPlan(){
   }
 
   // Tagesablauf
-  h += `<div class="glabel">Tagesablauf${isToday && nm > toMin(state.settings.dayStart) ? ' · ab jetzt geplant' : ''}</div>`;
+  h += `<div class="glabel">Tagesablauf</div>`;
   let prevSite = null;
   const tix = P.items.filter(i => i.type === 'ticket');
   for(const it of P.items){
