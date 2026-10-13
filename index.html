@@ -117,6 +117,7 @@ textarea.notes::placeholder{color:var(--label3)}
 .btn-fill{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;background:var(--blue);color:#fff;border-radius:14px;min-height:50px;padding:0 22px;font-size:17px;font-weight:600;white-space:nowrap}
 .btn-tint{--c:var(--blue);display:flex;align-items:center;justify-content:center;gap:6px;border:0;background:color-mix(in srgb,var(--c) 14%,transparent);color:var(--c);border-radius:12px;min-height:46px;padding:0 14px;font-size:16px;font-weight:600}
 .btn-tint svg{width:18px;height:18px}
+.btn-fill svg{width:20px;height:20px;flex:none}
 .btn-tint.dis,.btn-tint:disabled{--c:var(--label3)}
 .btn-fill:active,.btn-tint:active{opacity:.7}
 .txtbtn{border:0;background:none;color:var(--blue);font-size:17px;padding:6px 0;text-align:left}
@@ -1150,6 +1151,7 @@ function renderPlan(){
   h += `<div class="group" style="margin-top:24px">
     ${iconRow('copy','indigo','Tagesplan kopieren','copyDay')}
     ${iconRow('calplus','red','Zum Kalender hinzufügen','ics')}
+    ${iconRow('download','green','Inventar-Export (Excel)','openExport')}
   </div>`;
   $('#planBody').innerHTML = h;
 }
@@ -1435,10 +1437,32 @@ function openPaste(){
     <div class="gfoot">In Outlook die Mail oder die Kalendereinträge kopieren und hier einfügen. Der Techniker-Filter wird automatisch angewendet.</div>
     <div class="gfoot"><b>Tipp:</b> Ins Textfeld tippen und «Text scannen» wählen – das iPhone liest das Ticketblatt direkt mit der Kamera.</div>`, 'paste');
 }
-function toggleDone(id){
+const needsOldScan = t => !!(t.oldDevice || /austausch|abbau|abholung|r(ü|ue)ckbau/i.test(t.kind || ''));
+function toggleDone(id, force){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
-  t.done = !t.done; save(); renderPlan();
-  if(sheetMode === 'detail:'+id) openDetail(id);
+  if(!t.done && !force && needsOldScan(t)){ openFinish(id); return; }
+  t.done = !t.done; if(t.done) t.doneAt = new Date().toISOString();
+  save(); renderPlan();
+  if(sheetMode === 'detail:'+id || sheetMode === 'finish:'+id) openDetail(id);
+}
+function openFinish(id){
+  const t = state.tickets.find(x => x.id === id); if(!t) return;
+  const sc = t.scans || [];
+  const list = sc.map(x => `<div class="row"><span class="sq" style="--c:var(--${/^Alt/.test(x.what) ? 'orange' : /^Neu/.test(x.what) ? 'green' : 'indigo'})">${ICON.qr}</span>
+      <div class="k"><div class="fx1">${esc(x.code)}</div><div class="fx2">${esc(x.what || 'gescannt')}</div></div></div>`).join('');
+  const oldCount = sc.filter(x => /^Alt/.test(x.what)).length;
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Abschliessen</div><span></span></div>
+    <div class="det" style="--c:var(--${t.flex?'teal':'orange'})"><h2 style="font-size:20px">${esc(t.title || t.ticket)}</h2>
+      <div class="when">${esc([t.ticket || (t.orderId && 'Auftrag '+t.orderId), t.address].filter(Boolean).join(' · '))}</div></div>
+    ${t.oldDevice ? `<div class="gfoot" style="margin:10px 0 0">Altes Gerät laut Ticket: <b>${esc(t.oldDevice)}</b></div>` : ''}
+    <div class="glabel">Gescannt</div>
+    <div class="group">${list || '<div class="row"><span class="k" style="color:var(--label2)">Noch nichts gescannt</span></div>'}</div>
+    <button class="btn-fill" style="width:100%;margin-top:16px;--blue:var(--orange);background:var(--orange)" data-act="scanOld" data-id="${t.id}">${ICON.qr}${oldCount ? 'Weiteres altes Gerät scannen' : 'QR altes Gerät scannen'}</button>
+    <button class="btn-tint" style="width:100%;margin-top:10px;--c:var(--green)" data-act="scanNew" data-id="${t.id}">${ICON.qr}Neues Gerät scannen (optional)</button>
+    <div class="group" style="margin-top:20px">
+      <div class="row tap" data-act="finishDone" data-id="${t.id}"><span class="k blue" style="font-weight:600">${oldCount ? 'Fertig – als erledigt markieren' : 'Ohne Scan als erledigt markieren'}</span></div>
+    </div>`, 'finish:'+id);
 }
 
 let toastT;
@@ -1823,8 +1847,8 @@ async function getDetector(){
 async function openScanner(mode, id){
   scan.mode = mode; scan.id = id || null;
   const t = id && state.tickets.find(x => x.id === id);
-  $('#scanTitle').textContent = mode === 'ticket' ? 'Gerät scannen' : 'Code scannen';
-  $('#scanHint').textContent = mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
+  $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : 'Code scannen';
+  $('#scanHint').textContent = mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
   $('#scanner').hidden = false; document.body.style.overflow = 'hidden';
   try{
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Kamera nicht verfügbar (App in Safari über GitHub Pages öffnen)');
@@ -1883,6 +1907,15 @@ function handleScan(code, format){
     const n = addCandidates(textToBlocks(code), $('#scanDate').value || view.date);
     setTab('scan'); toast(foundMsg(n)); return;
   }
+  if(scan.mode === 'old' || scan.mode === 'new'){
+    const t = state.tickets.find(x => x.id === scan.id); if(!t) return;
+    const m = codeMatches(t, code), label = scan.mode === 'old' ? 'Altes Gerät' : 'Neues Gerät';
+    if((t.scans || []).some(x => normCode(x.code) === normCode(code))){ toast('Dieser Code ist schon gespeichert'); openFinish(t.id); return; }
+    (t.scans ||= []).push({ code, what: m === label ? label : label + ' (gescannt)', at: new Date().toISOString() });
+    save(); openFinish(t.id);
+    toast(m === label ? `✓ ${label} stimmt mit Ticket überein` : `${label}: ${code} gespeichert`);
+    return;
+  }
   if(scan.mode === 'ticket'){
     const t = state.tickets.find(x => x.id === scan.id); if(!t) return;
     const what = codeMatches(t, code);
@@ -1926,6 +1959,91 @@ function handleScan(code, format){
     </div>`, 'scanresult');
 }
 
+/* ===================== INVENTAR-EXPORT (Excel) ===================== */
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const HOST_RE = /\bzrh[lehtw][a-z0-9]{3,5}\b|notebook|laptop|x360|elitebook|\bEB\b|yoga|\bL1[3-6]\b|thinkpad|thinkcentre|thin ?client|\bTC\b|t6[34]0|\bPC\b|desktop|surface|\b[0-9]{3} G1?\d\b/i;
+const PERI_RE = /monitor|display|bildschirm|\bTFT\b|E2[34]\d?i?|T2[47]-|dock|thunderbolt|\bTB\b|\bDS\b|headset|tastatur|keyboard|maus|mouse|netzteil|ladeger|kabel|drucker|scanner|webcam|kamera|lautsprecher/i;
+function deviceType(code, desc){
+  const d = (desc || '') + ' ' + (code || '');
+  if(/^zrh[lehtw]/i.test(code || '')) return 'Host';
+  if(PERI_RE.test(desc || '')) return 'Peripherie';
+  if(HOST_RE.test(d)) return 'Host';
+  if(/^(42|62)\d{8}$/.test(code || '')) return 'Peripherie';
+  if(/^(32|72)\d{8}$/.test(code || '')) return 'Host';
+  return 'Peripherie';
+}
+function inventoryRows(range){
+  const today = iso(new Date()), ws = weekStart(today);
+  const inRange = t => range === 'day' ? t.date === view.date : range === 'week' ? (t.date >= ws && t.date <= addDays(ws, 6)) : true;
+  const rows = [];
+  const split = v => String(v || '').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
+  for(const t of state.tickets.filter(inRange).sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start))){
+    const base = { 'Datum': t.date.split('-').reverse().join('.'), 'Incident/WO': t.ticket || '', 'Auftrag': t.orderId || (t.free ? 'kostenlos' : ''),
+      'Art': t.kind || '', 'Standort': t.address || '', 'Etage/Büro': t.room || '', 'Kontakt': t.contact || '',
+      'Erledigt': t.done ? 'Ja' : 'Nein' };
+    const add = (status, code, desc, scanned, host) => {
+      const isAsset = /^\d{8,12}$/.test(code), isHost = /^zrh[lehtw][a-z0-9]{3,5}$/i.test(code);
+      rows.push({ ...base, 'Typ': deviceType(isHost ? code : host || code, desc), 'Status': status,
+        'Asset-ID': isAsset ? code : '', 'Hostname': (isHost ? code : host || '').toUpperCase(), 'Code (anderer)': !isAsset && !isHost ? code : '',
+        'Beschreibung': desc || '', 'Gescannt': scanned ? 'Ja' : 'Nein' });
+    };
+    const scans = t.scans || [];
+    const oldScans = scans.filter(x => /^Alt/.test(x.what)), newScans = scans.filter(x => /^Neu/.test(x.what));
+    const oldDesc = t.oldDevice || '';
+    const oldHost = (t.oldDevice || '').match(/\bzrh[lehtw][a-z0-9]{3,5}\b/i), oldAsset = (t.oldDevice || '').match(/\b\d{8,12}\b/);
+    // Alte Geräte (Rücknahme)
+    if(oldScans.length) oldScans.forEach((x, i) => add('Alt (zurück)', x.code, oldDesc, true, i === 0 && oldHost && /^\d+$/.test(x.code) ? oldHost[0] : ''));
+    else if(t.oldDevice) add('Alt (zurück)', oldAsset ? oldAsset[0] : oldHost ? oldHost[0] : '', oldDesc, false);
+    // Neue Geräte (ausgeliefert)
+    const newCodes = split(t.newDevice);
+    const mat = t.material || '';
+    const newHosts = newCodes.filter(c => /^zrh/i.test(c));
+    let usedHost = null;
+    if(newScans.length) newScans.forEach((x, i) => {
+      const h = i === 0 && /^\d+$/.test(x.code) && newHosts.length === 1 ? newHosts[0] : '';
+      if(h) usedHost = h;
+      add('Neu (ausgeliefert)', x.code, mat, true, h);
+    });
+    newCodes.filter(c => c !== usedHost && !newScans.some(x => normCode(x.code) === normCode(c))).forEach(c => add('Neu (ausgeliefert)', c, mat, false));
+    if(!newCodes.length && !newScans.length && mat) add('Neu (ausgeliefert)', '', mat, false);
+    // Sonstige Scans
+    scans.filter(x => !/^(Alt|Neu)/.test(x.what)).forEach(x => add(x.what || 'Gescannt', x.code, '', true));
+  }
+  return rows;
+}
+async function exportInventory(range){
+  const rows = inventoryRows(range);
+  if(!rows.length){ toast('Keine Geräte im gewählten Zeitraum'); return; }
+  try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
+  const cols = ['Datum','Incident/WO','Auftrag','Typ','Status','Asset-ID','Hostname','Code (anderer)','Beschreibung','Art','Standort','Etage/Büro','Kontakt','Gescannt','Erledigt'];
+  const widths = [11,18,10,11,18,13,12,14,34,11,28,22,24,9,9];
+  const wb = XLSX.utils.book_new();
+  const sheet = (name, data) => {
+    const ws = XLSX.utils.json_to_sheet(data, { header: cols });
+    ws['!cols'] = widths.map(w => ({ wch:w }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:Math.max(data.length,1), c:cols.length-1} }) };
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  };
+  sheet('Host', rows.filter(r => r.Typ === 'Host'));
+  sheet('Peripherie', rows.filter(r => r.Typ === 'Peripherie'));
+  sheet('Alle', rows);
+  const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+  const label = range === 'day' ? view.date : range === 'week' ? 'KW-' + weekStart(iso(new Date())) : 'alle';
+  await deliver(`imacd-inventar-${label}.xlsx`, out, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', true);
+  closeSheet();
+}
+function openExport(){
+  const n = r => inventoryRows(r).length;
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Inventar-Export</div><span></span></div>
+    <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>: Incident, Auftrag, Asset-ID, Hostname, Alt/Neu, Standort und Büro – für die Inventarpflege.</div>
+    <div class="group" style="margin-top:16px">
+      <div class="row tap" data-act="xlsx" data-r="day"><span class="k blue">Ausgewählter Tag (${esc(longDate(view.date))})</span><span class="v">${n('day')} Geräte</span></div>
+      <div class="row tap" data-act="xlsx" data-r="week"><span class="k blue">Diese Woche</span><span class="v">${n('week')} Geräte</span></div>
+      <div class="row tap" data-act="xlsx" data-r="all"><span class="k blue">Alle gespeicherten Tickets</span><span class="v">${n('all')} Geräte</span></div>
+    </div>`, 'export');
+}
+
 /* ===================== EVENTS ===================== */
 document.addEventListener('click', e => {
   if(e.target.closest('a[href]')) return;
@@ -1936,8 +2054,13 @@ document.addEventListener('click', e => {
   switch(b.dataset.act){
     case 'scanFind': if(sheetMode === 'scanresult') closeSheet(); openScanner('find'); break;
     case 'scanTicket': openScanner('ticket', id); break;
-    case 'scanClose': closeScanner(); break;
+    case 'scanClose': closeScanner(); if((scan.mode === 'old' || scan.mode === 'new') && scan.id) openFinish(scan.id); break;
     case 'scanTorch': toggleTorch(); break;
+    case 'scanOld': openScanner('old', id); break;
+    case 'scanNew': openScanner('new', id); break;
+    case 'finishDone': toggleDone(id, true); toast('Erledigt'); break;
+    case 'xlsx': exportInventory(b.dataset.r); break;
+    case 'openExport': openExport(); break;
     case 'assignScan': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       (t.scans ||= []).push({ code: b.dataset.v, what: b.dataset.w ? b.dataset.w + ' (zugeordnet)' : '', at: new Date().toISOString() });
