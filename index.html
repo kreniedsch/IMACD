@@ -200,6 +200,13 @@ textarea.notes::placeholder{color:var(--label3)}
 .scan-btn.on{background:#FFD60A;color:#000}
 .scan-hint{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;font-size:15px;background:rgba(60,60,67,.6);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);padding:10px 14px;border-radius:14px}
 .scanlist .row .k{font-variant-numeric:tabular-nums}
+/* Kalender-Auswahl */
+.chips{display:flex;gap:8px;overflow-x:auto;margin:-6px -16px 16px;padding:2px 16px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:0;border-radius:999px;padding:7px 14px;font-size:15px;font-weight:600;background:var(--fill);color:var(--label);display:flex;gap:6px;align-items:center}
+.chip span{font-size:12px;font-weight:600;color:var(--label2);font-variant-numeric:tabular-nums}
+.chip.on{background:var(--label);color:var(--bg)}
+.chip.on span{color:var(--bg);opacity:.7}
 /* Leerer Zustand */
 .empty{text-align:center;padding:44px 24px}
 .eico{width:76px;height:76px;border-radius:22px;background:var(--fill);color:var(--label2);display:grid;place-items:center;margin:0 auto 16px}
@@ -282,15 +289,14 @@ nav.tabs button.on{color:var(--blue)}
       </div>
     </div>
     <div class="week" id="week"></div>
+    <div class="chips" id="groupChips"></div>
     <div id="planBody"></div>
   </section>
 
   <section id="tab-scan" hidden>
     <div class="lt"><div class="lt-l"><div class="eyebrow">IMACD</div><h1>Erfassen</h1></div></div>
     <div class="warn" id="previewWarn" hidden style="margin:0 0 4px"><span data-icon="warn"></span><div><b>Vorschau-Modus</b><br>Kamera-Erkennung und KI funktionieren nur, wenn die App in Safari über GitHub Pages geöffnet ist. «Text einfügen» klappt auch hier.</div></div>
-    <div class="glabel" style="margin-top:6px">Ich bin</div>
-    <div class="seg" id="techSeg"></div>
-    <div class="gfoot">Es werden nur Tickets für diesen Techniker übernommen.</div>
+    <div class="gfoot" style="margin:2px 4px 0">Tipp: Outlook-Kalender als .ics («Vollständige Details») laden – alle Termine werden übernommen. Welchen Kalender du siehst (T1, T2, T3, HWLC …), wählst du oben im Tagesplan.</div>
     <div class="tiles">
       <label class="tile" style="--c:var(--blue)"><input type="file" accept="image/*" capture="environment" id="inCam"><span class="ico" data-icon="camera"></span><div><b>Kamera</b><small>Blatt für Blatt fotografieren</small></div></label>
       <label class="tile" style="--c:var(--indigo)"><input type="file" accept="image/*,application/pdf,.pdf,text/calendar,.ics" multiple id="inFiles"><span class="ico" data-icon="photo"></span><div><b>Fotos & Dateien</b><small>Mehrere Fotos auf einmal, PDF</small></div></label>
@@ -515,6 +521,7 @@ function parseBlock(raw, fallbackDate){
     if(cand) t.title = cand;
   }
   outlookEnhance(t, lines, text);
+  t.group = groupOf(text);
   t.title = t.title.slice(0,100);
   return t;
 }
@@ -769,6 +776,18 @@ function textToBlocks(text){ return /BEGIN:VEVENT/i.test(text) ? icsToBlocks(tex
 /* Techniker-Filter: Block erwähnt andere Techniker, aber nicht meinen → überspringen */
 const TECH_RE = /\btechniker(?:in)?\s*[:#\-]?\s*(\d{1,2})\b|\btech\.?\s*(\d{1,2})\b/gi;
 function techNumbers(text){ return [...String(text).matchAll(TECH_RE)].map(m => +(m[1]||m[2])); }
+function groupOf(text){
+  const kat = String(text).match(/^\W{0,3}(?:kategorien|categories)\s*:?(.*)$/im);
+  const k = kat ? kat[1] : '';
+  const m = (k || text).match(/techn[il1]ker\s*(\d)/i);
+  if(m && +m[1] >= 1 && +m[1] <= 3) return 'T' + m[1];
+  if(/hwlc|life\s?c[yi]cle/i.test(k) || /^\W*betreff:\s*(hardware-?life|hwlc|bot team)/im.test(text)) return 'HWLC';
+  if(/post/i.test(k) || /VERSAND:/.test(text)) return 'Post';
+  return '';
+}
+const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['Post','Post'],['all','Alle']];
+const viewGroup = () => state.settings.view || 'all';
+const visible = t => viewGroup() === 'all' || (t.group || '') === viewGroup();
 function isForMe(text, myTech){
   if(!myTech) return true;
   const kat = String(text).match(/^\W{0,3}(?:kategorien|categories)\s*:?(.*)$/im);
@@ -843,11 +862,17 @@ const ICON = {
 
 /* ===================== SPEICHER ===================== */
 const STORE = 'einsatzplan.v1';
-const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:10, ocrLang:'deu+eng', tech:'', nav:'google', aiOn:false, aiProvider:'gemini', aiKey:'', aiModel:'claude-sonnet-5-5', gemKey:'', gemModel:'gemini-3.6-flash' };
+const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:10, ocrLang:'deu+eng', tech:'', view:'all', nav:'google', aiOn:false, aiProvider:'gemini', aiKey:'', aiModel:'claude-sonnet-5-5', gemKey:'', gemModel:'gemini-3.6-flash' };
 let state = load();
 function load(){
   try{
     const s = JSON.parse(localStorage.getItem(STORE));
+    if(s && s.settings && !s.settings.v3){
+      const tg = /^[123]$/.test(s.settings.tech || '') ? 'T' + s.settings.tech : '';
+      s.settings.view = tg || 'all';
+      (s.tickets || []).forEach(t => { if(!t.group) t.group = groupOf(t.raw || '') || tg; });
+      s.settings.v3 = true;
+    }
     if(s && s.settings && !s.settings.v2){ if(+s.settings.travel === 20) s.settings.travel = 10; s.settings.v2 = true; }
     if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null };
   }catch(e){}
@@ -876,7 +901,7 @@ function siteKey(t){
 }
 function plan(date){
   const S = state.settings;
-  const all = state.tickets.filter(t => t.date === date);
+  const all = state.tickets.filter(t => t.date === date && visible(t));
   // Alles mit Uhrzeit steht zu seiner Zeit (auch Flex – die Dispo hat es so geplant)
   const timed = all.filter(t => t.start).sort((a,b)=>toMin(a.start)-toMin(b.start) || (a.flex - b.flex));
   const fixed = timed.filter(t => !t.flex);
@@ -977,7 +1002,8 @@ function eyebrowDate(d){
 function weekStart(d){ const o = dObj(d); return addDays(d, -((o.getDay()+6)%7)); }
 function fmtDur(min){ return min < 60 ? `${min} Min.` : `${Math.floor(min/60)} Std.${min%60 ? ' '+(min%60)+' Min.' : ''}`; }
 function pills(t){
-  return `<span class="pill ${t.flex?'teal':'orange'}">${t.flex?'Flex':'Fix'}</span>`
+  return (viewGroup() === 'all' && t.group ? `<span class="pill" style="--c:var(--label)">${esc(t.group)}</span>` : '')
+       + `<span class="pill ${t.flex?'teal':'orange'}">${t.flex?'Flex':'Fix'}</span>`
        + (t.kind ? `<span class="pill">${esc(t.kind)}</span>` : '')
        + (t.shelf ? `<span class="pill blue">Regal ${esc(t.shelf)}</span>` : '')
        + (t.free ? `<span class="pill green">Kostenlos</span>` : '')
@@ -991,13 +1017,19 @@ function iconRow(icon, color, text, act, extra=''){
 }
 
 /* ---------- Wochenleiste ---------- */
+function renderGroups(){
+  const dayT = state.tickets.filter(t => t.date === view.date);
+  const cnt = g => g === 'all' ? dayT.length : dayT.filter(t => (t.group || '') === g).length;
+  $('#groupChips').innerHTML = GROUPS.filter(([g]) => g === 'all' || g === viewGroup() || cnt(g) || /^T[123]$/.test(g))
+    .map(([g,l]) => `<button class="chip ${viewGroup()===g?'on':''}" data-act="view" data-v="${g}">${l}<span>${cnt(g)}</span></button>`).join('');
+}
 function renderWeek(){
   const ws = weekStart(view.date), today = iso(new Date());
   const names = ['Mo','Di','Mi','Do','Fr','Sa','So'];
   let h = `<button class="wk-nav" data-act="weekPrev" aria-label="Vorherige Woche">${ICON.chevl}</button><div class="wk-days">`;
   for(let i=0;i<7;i++){
     const d = addDays(ws, i);
-    const list = state.tickets.filter(t => t.date === d && !t.done);
+    const list = state.tickets.filter(t => t.date === d && !t.done && visible(t));
     const dot = list.length ? (list.some(t => !t.flex) ? 'fix' : 'flex') : '';
     h += `<button class="wd ${d===view.date?'sel':''} ${d===today?'today':''}" data-act="pickDay" data-d="${d}">
       <span class="wdn">${names[i]}</span><span class="wdd">${dObj(d).getDate()}</span><span class="wdot ${dot}"></span></button>`;
@@ -1032,7 +1064,7 @@ function renderPlan(){
   $('#planEyebrow').textContent = eyebrowDate(view.date);
   $('#dayInput').value = view.date;
   $('#todayBtn').hidden = isToday;
-  renderWeek();
+  renderWeek(); renderGroups();
 
   const P = plan(view.date), nm = nowMin();
   let h = '';
@@ -1103,7 +1135,7 @@ function renderPlan(){
   }
 
   // Material aus dem Lager
-  const mat = state.tickets.filter(t => t.date === view.date && t.shelf).sort((a,b) => a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
+  const mat = state.tickets.filter(t => t.date === view.date && t.shelf && visible(t)).sort((a,b) => a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
   if(mat.length){
     h += `<div class="glabel">Aus dem Lager holen</div><div class="group">` + mat.map(t => `
       <div class="row tap ${t.done?'done':''}" data-act="detail" data-id="${t.id}">
@@ -1161,10 +1193,6 @@ function renderScan(){
   const dot = $('#pendDot');
   dot.hidden = !state.pending.length; dot.textContent = state.pending.length;
 
-  if(+state.settings.tech > 3) state.settings.tech = '';
-  const tech = state.settings.tech || '';
-  $('#techSeg').innerHTML = [['','Alle'],['1','Techniker 1'],['2','Techniker 2'],['3','Techniker 3']]
-    .map(([v,l]) => `<button class="${tech===v?'on':''}" data-act="tech" data-v="${v}">${l}</button>`).join('');
   const pm = $('#photoMode').value;
   $('#pmSeg').innerHTML = [['one','Einzeln'],['merge','Zusammen']]
     .map(([v,l]) => `<button class="${pm===v?'on':''}" data-act="pmode" data-v="${v}">${l}</button>`).join('');
@@ -1474,7 +1502,7 @@ function toast(msg){
 /* ===================== ÜBERNEHMEN ===================== */
 function acceptOne(id){
   const p = state.pending.find(x => x.id === id); if(!p) return;
-  const key = x => x.ticket || x.orderId;
+  const key = x => x.ticket || x.orderId || ((x.title || '') + '|' + (x.start || ''));
   const ex = key(p) && state.tickets.find(x => key(x) === key(p) && x.date === p.date);
   if(ex) Object.assign(ex, { ...p, id:ex.id, done:ex.done, notes: ex.notes || p.notes });
   else state.tickets.push(p);
@@ -1595,17 +1623,14 @@ function aiToTicket(o, fallbackDate){
     email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
     notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
     shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), winFrom: hm(o.winFrom), winTo: hm(o.winTo), vip: o.vip === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
+    group: parseInt(o.technician, 10) >= 1 && parseInt(o.technician, 10) <= 3 ? 'T' + parseInt(o.technician, 10) : '',
     raw: 'Mit KI erkannt (' + (state.settings.aiProvider === 'claude' ? 'Claude' : 'Gemini') + ')', done:false, ai:true };
   if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
   return t;
 }
 function addAiTickets(list, date){
-  const my = state.settings.tech; let n = 0;
-  for(const o of list){
-    const tn = parseInt(o.technician, 10);
-    if(my && tn && tn !== +my){ lastSkipped++; continue; }
-    state.pending.push(aiToTicket(o, date)); n++;
-  }
+  let n = 0;
+  for(const o of list){ state.pending.push(aiToTicket(o, date)); n++; }
   save(); renderScan(); return n;
 }
 const aiReady = () => state.settings.aiOn && (state.settings.aiProvider === 'claude' ? state.settings.aiKey : state.settings.gemKey);
@@ -1701,7 +1726,6 @@ function addCandidates(blocks, date){
   let n = 0;
   for(const b of blocks){
     if(b.replace(/\s/g,'').length < 15) continue;
-    if(!isForMe(b, state.settings.tech)){ lastSkipped++; continue; }
     state.pending.push(parseBlock(b, date)); n++;
   }
   save(); renderScan();
@@ -1714,7 +1738,7 @@ function foundMsg(n){
   const other = sk ? ` · ${sk} von anderen Technikern ausgelassen` : '';
   return n ? `${n} Ticket${n===1?'':'s'} erkannt – bitte prüfen${other}` : `Nichts für dich erkannt${other}`;
 }
-let busy = false, batches = [], shot = 0;
+let busy = false, batches = [], shot = 0, icsDone = false;
 function handleFiles(fileList){
   const files = [...fileList]; if(!files.length) return Promise.resolve();
   batches.push(files); updateQueue();
@@ -1744,7 +1768,16 @@ async function processBatch(files){
         }catch(err){ console.error(err); toast('KI: '+errMsg(err)+' – lokale Erkennung wird verwendet'); await new Promise(r => setTimeout(r, 1200)); }
       }
       if(f.type === 'text/calendar' || /\.ics$/i.test(f.name)){
-        n += addCandidates(icsToBlocks(await f.text()), date);
+        const ts = icsToBlocks(await f.text()).filter(b => b.replace(/\s/g,'').length >= 15).map(b => parseBlock(b, date));
+        const cnt = {}; let firstDate = null;
+        for(const t of ts){ state.pending.push(t); acceptOne(t.id); cnt[t.group || 'Andere'] = (cnt[t.group || 'Andere'] || 0) + 1; firstDate ||= t.date; }
+        save();
+        if(ts.length){
+          if(firstDate) view.date = firstDate;
+          const mine = viewGroup() !== 'all' && cnt[viewGroup()] != null ? ` · ${viewGroup()}: ${cnt[viewGroup()]}` : '';
+          setTimeout(() => { setTab('plan'); toast(`${ts.length} Termine übernommen${mine}`); }, 50);
+          icsDone = true;
+        }
       } else if(f.type === 'application/pdf' || /\.pdf$/i.test(f.name)){
         n += addCandidates(textToBlocks(await pdfText(f)), date);
       } else {
@@ -1754,7 +1787,8 @@ async function processBatch(files){
       }
     }
     if(merged.length) n += addCandidates(splitBlocks(merged.join('\n\n')), date);
-    toast(n || lastSkipped || icsBusySkipped ? foundMsg(n) : 'Kein Text erkannt. Foto gerader und heller aufnehmen.');
+    if(icsDone){ icsDone = false; }
+    else toast(n || lastSkipped || icsBusySkipped ? foundMsg(n) : 'Kein Text erkannt. Foto gerader und heller aufnehmen.');
   }catch(e){ console.error(e); toast(errMsg(e)); }
   finally{ busy = false; if(!batches.length){ endProg(); shot = 0; } }
 }
@@ -1977,7 +2011,7 @@ function inventoryRows(range){
   const inRange = t => range === 'day' ? t.date === view.date : range === 'week' ? (t.date >= ws && t.date <= addDays(ws, 6)) : true;
   const rows = [];
   const split = v => String(v || '').split(/\s*,\s*/).map(x => x.trim()).filter(Boolean);
-  for(const t of state.tickets.filter(inRange).sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start))){
+  for(const t of state.tickets.filter(t => inRange(t) && visible(t)).sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start))){
     const base = { 'Datum': t.date.split('-').reverse().join('.'), 'Incident/WO': t.ticket || '', 'Auftrag': t.orderId || (t.free ? 'kostenlos' : ''),
       'Art': t.kind || '', 'Standort': t.address || '', 'Etage/Büro': t.room || '', 'Kontakt': t.contact || '',
       'Erledigt': t.done ? 'Ja' : 'Nein' };
@@ -2094,9 +2128,7 @@ document.addEventListener('click', e => {
       setTab('plan'); toast(`${n} ${n===1?'Ticket':'Tickets'} übernommen`); break;
     }
     case 'discard': state.pending = state.pending.filter(x => x.id !== id); save(); renderAll(); break;
-    case 'tech':
-      state.settings.tech = b.dataset.v; save(); renderScan();
-      toast(b.dataset.v ? `Nur Tickets für Techniker ${b.dataset.v}` : 'Alle Tickets werden übernommen'); break;
+    case 'view': state.settings.view = b.dataset.v; save(); renderPlan(); break;
     case 'aiProv': state.settings.aiProvider = b.dataset.v; save(); renderData(); renderScan(); break;
     case 'pmode': $('#photoMode').value = b.dataset.v; renderScan(); break;
     case 'openPaste': openPaste(); break;
