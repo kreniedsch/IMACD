@@ -413,7 +413,7 @@ function parseBlock(raw, fallbackDate){
   const text = normOcr(String(raw).replace(/\r/g,'').replace(/[|¦]/g,' '));
   const lines = text.split('\n').map(l => l.replace(/\s+/g,' ').trim()).filter(Boolean);
   const t = { id:uid(), ticket:'', kind:'', title:'', date:fallbackDate, start:'', end:'', flex:false, dur:null,
-              address:'', room:'', contact:'', phone:'', email:'', notes:'', devices:'', raw:text.trim(), done:false };
+              address:'', room:'', contact:'', phone:'', email:'', notes:'', devices:'', shelf:'', orderId:'', newDevice:'', oldDevice:'', raw:text.trim(), done:false };
 
   // Ticketnummer
   const nums = [...text.matchAll(new RegExp(TICKET_RE.source,'gi'))].map(m => ({ p:normPrefix(m[1]), id:normTicket(m[1],m[2]) }));
@@ -489,7 +489,7 @@ function parseBlock(raw, fallbackDate){
 
 /* Outlook-Termin (Betreff / Beginn / Ende / Kategorien) – Format OIZ-SIBAP */
 const OL_LABEL = /^\W{0,3}(betreff|subject|beginn|start|ende|end|serientyp|organisator|kategorien|categories|ort|location|standort|termin|erforderliche|optionale|teilnehmer|wichtigkeit)\b/i;
-const KIND_RE = /\b(austausch|install(?:ation)?|neuinstallation|move|umzug|z(?:ü|ue)geln|add|change|dispose|entsorgung|rollout|ersatz|r(?:ü|ue)ckbau|r(?:ü|ue)cknahme|abholen|ausliefern|staging|stagen)\b/i;
+const KIND_RE = /\b(austausch|abbau|install(?:ation)?|neuinstallation|move|umzug|z(?:ü|ue)geln|add|change|dispose|entsorgung|rollout|ersatz|r(?:ü|ue)ckbau|r(?:ü|ue)cknahme|abholen|ausliefern|staging|stagen)\b/i;
 function outlookEnhance(t, lines, text){
   // Geräte (Computernamen der Stadt Zürich)
   const dev = [...new Set([...text.matchAll(/\bzrh[l1I][a-z0-9]{3,5}\b/gi)].map(m => m[0].toUpperCase().replace(/^ZRH[1I]/,'ZRHL')))];
@@ -535,7 +535,15 @@ function outlookEnhance(t, lines, text){
     betreff = parts.join(' ').replace(/\s+/g,' ').trim();
     if(betreff) t.notes = 'Betreff: ' + betreff + (t.notes ? '\n'+t.notes : '');
     const segs = betreff.split(/\s\/\s|\s\/|\/\s/).map(x => x.trim()).filter(Boolean);
-    for(const sg of segs){
+    for(let i = 0; i < segs.length; i++){
+      const sg = segs[i], num = sg.replace(/[Oo]/g,'0').replace(/\s/g,'');
+      if(/^[A-Z][0-9lI|T]{1,2}$/.test(sg) && !t.shelf){ t.shelf = sg[0] + sg.slice(1).replace(/[lI|T]/g,'1'); continue; }   // Regalplatz
+      if(/^\d{6}$/.test(num) && !t.orderId){ t.orderId = num; continue; }                                                     // Auftrags-ID
+      if(/^\d{8,12}$/.test(num) && !t.newDevice){ t.newDevice = num; continue; }                                               // Asset-ID
+      if(/^zrh[l1I][a-z0-9]{3,5}$/i.test(sg) && !t.newDevice){ t.newDevice = sg.toUpperCase().replace(/^ZRH[1I]/,'ZRHL'); continue; } // Hostname
+      if(new RegExp('^'+TICKET_RE.source+'$','i').test(sg)) continue;
+      const od = sg.match(/^(austausch|abbau|r(?:ü|ue)ckbau|ersatz|entsorgung)\s*:?\s*(.+)$/i);
+      if(od){ t.oldDevice = od[2].replace(/\s\d{5,}\b/g,'').replace(/\s*--\s*/g,' – ').trim(); continue; }                 // Altes Gerät
       if(/(strasse|str\.|gasse|weg|platz|quai|ring|allee|rain|hof|graben|bühl|buehl|matte|acker|halde|steig)\s*\d/i.test(sg) && (!t.address || !/\d/.test(t.address)))
         t.address = sg.replace(/\s+(etage|stock|büro|buero|raum)\b.*$/i,'');
       if(/^(etage|stock|büro|buero|raum|zimmer|\d+\.?\s?og)\b/i.test(sg) && !t.room) t.room = sg;
@@ -780,6 +788,7 @@ function fmtDur(min){ return min < 60 ? `${min} Min.` : `${Math.floor(min/60)} S
 function pills(t){
   return `<span class="pill ${t.flex?'teal':'orange'}">${t.flex?'Flex':'Fix'}</span>`
        + (t.kind ? `<span class="pill">${esc(t.kind)}</span>` : '')
+       + (t.shelf ? `<span class="pill blue">Regal ${esc(t.shelf)}</span>` : '')
        + (t.done ? `<span class="pill green">Erledigt</span>` : '');
 }
 function rawBlock(raw){ return `<details class="raw"><summary>Erkannter Originaltext</summary><pre>${esc(raw)}</pre></details>`; }
@@ -873,7 +882,10 @@ function renderPlan(){
         </div>
       </div>`;
     } else {
-      h += `<div class="card allok"><span class="sq" style="--c:var(--green)">${ICON.check}</span>Alle Fixtermine erledigt</div>`;
+      const open = P.fixed.filter(f => !f.done).length;
+      h += open
+        ? `<div class="card allok"><span class="sq" style="--c:var(--orange)">${ICON.clock}</span>Keine weiteren Fixtermine · ${open} noch nicht abgehakt</div>`
+        : `<div class="card allok"><span class="sq" style="--c:var(--green)">${ICON.check}</span>Alle Fixtermine erledigt</div>`;
     }
     h += `<div class="glabel">Fixtermine</div><div class="group">` + P.fixed.map(f => `
       <div class="row tap ${f.done?'done':''}" data-act="detail" data-id="${f.id}">
@@ -881,6 +893,18 @@ function renderPlan(){
         <div class="k"><div class="fx1 ellip">${esc(f.contact || f.title || f.ticket || 'Fixtermin')}</div>
           <div class="fx2 ellip">${esc([f.ticket, f.address].filter(Boolean).join(' · ') || 'Standort fehlt')}</div></div>
         ${f.phone?`<a class="callbtn" href="${telUrl(f.phone)}" aria-label="Anrufen">${ICON.phone}</a>`:''}
+      </div>`).join('') + `</div>`;
+  }
+
+  // Material aus dem Lager
+  const mat = state.tickets.filter(t => t.date === view.date && t.shelf).sort((a,b) => a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
+  if(mat.length){
+    h += `<div class="glabel">Aus dem Lager holen</div><div class="group">` + mat.map(t => `
+      <div class="row tap ${t.done?'done':''}" data-act="detail" data-id="${t.id}">
+        <div class="fxt" style="color:var(--blue)">${esc(t.shelf)}</div>
+        <div class="k"><div class="fx1 ellip">${esc(t.newDevice || t.title || 'Gerät')}</div>
+          <div class="fx2 ellip">${esc([t.orderId && 'Auftrag '+t.orderId, t.ticket].filter(Boolean).join(' · '))}</div></div>
+        <span class="chev">${ICON.chev}</span>
       </div>`).join('') + `</div>`;
   }
 
@@ -1053,7 +1077,9 @@ function openDetail(id){
   const W = warnings(t);
   const info = [
     ['Ticket', t.ticket], ['Datum', longDate(t.date)], ['Standort', t.address], ['Raum', t.room],
-    ['Geräte', t.devices], ['Kontakt', t.contact], ['Telefon', t.phone, t.phone && telUrl(t.phone)], ['E-Mail', t.email, t.email && 'mailto:'+t.email], ['Notizen', t.notes]
+    ['Auftrags-ID', t.orderId], ['Regal', t.shelf],
+    ['Neues Gerät', t.newDevice ? (/^\d+$/.test(t.newDevice) ? 'Asset '+t.newDevice : t.newDevice) : ''],
+    ['Altes Gerät', t.oldDevice], ['Geräte', !t.newDevice && !t.oldDevice ? t.devices : ''], ['Kontakt', t.contact], ['Telefon', t.phone, t.phone && telUrl(t.phone)], ['E-Mail', t.email, t.email && 'mailto:'+t.email], ['Notizen', t.notes]
   ].filter(r => r[1]);
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><span></span><span></span><button class="txtbtn bold" data-act="closeSheet">Fertig</button></div>
@@ -1096,8 +1122,14 @@ function openEdit(t, mode){
     <div class="group form">
       ${frow('Nummer','fTicket',t.ticket,'text','WO…','autocapitalize="characters" autocomplete="off"')}
       ${frow('Titel','fTitle',t.title,'text','Auftrag')}
-      ${frow('Art','fKind',t.kind,'text','Austausch, Staging …')}
-      ${frow('Geräte','fDev',t.devices,'text','ZRHL…','autocapitalize="characters" autocomplete="off"')}
+      ${frow('Art','fKind',t.kind,'text','Austausch, Abbau …')}
+    </div>
+    <div class="glabel">Auftrag & Material</div>
+    <div class="group form">
+      ${frow('Auftrags-ID','fOrder',t.orderId,'text','250880','inputmode="numeric" autocomplete="off"')}
+      ${frow('Regal','fShelf',t.shelf,'text','C1','autocapitalize="characters" autocomplete="off"')}
+      ${frow('Neues Gerät','fNew',t.newDevice,'text','Hostname / Asset-ID','autocapitalize="characters" autocomplete="off"')}
+      ${frow('Altes Gerät','fOld',t.oldDevice,'text','bei Austausch / Abbau','autocomplete="off"')}
     </div>
     <div class="glabel">Termin</div>
     <div class="group form">
@@ -1130,7 +1162,7 @@ function saveEdit(){
     ticket: v('fTicket').toUpperCase(), date: v('fDate') || view.date, flex: $('#fFlex').checked,
     start: v('fStart'), end: v('fEnd'), dur: v('fDur') ? Math.max(5, +v('fDur')) : null,
     title: v('fTitle'), kind: v('fKind'), address: v('fAddr'), room: v('fRoom'),
-    devices: v('fDev').toUpperCase(), contact: v('fContact'), phone: v('fPhone') ? fmtPhone(v('fPhone')) : '', email: v('fEmail'), notes: $('#fNotes').value.trim()
+    orderId: v('fOrder'), shelf: v('fShelf').toUpperCase(), newDevice: v('fNew').toUpperCase(), oldDevice: v('fOld'), contact: v('fContact'), phone: v('fPhone') ? fmtPhone(v('fPhone')) : '', email: v('fEmail'), notes: $('#fNotes').value.trim()
   });
   if($('#fDone')) t.done = $('#fDone').checked;
   if(mode === 'new') state.tickets.push(t);
@@ -1177,7 +1209,7 @@ function acceptOne(id){
 
 /* ===================== KI-ERKENNUNG (Claude) ===================== */
 const AI_PROMPT = `Du liest Arbeitstickets eines IT-Technikers der Stadt Zürich (meist ausgedruckte Outlook-Termine «OIZ-SIBAP Betriebspartner», manchmal Mails oder Helix-Tickets). Erkenne ALLE Tickets und antworte NUR mit JSON, ohne weiteren Text:
-{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"contact":"","phone":"","email":"","task":"","notes":""}]}
+{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
 Regeln:
 - ticket: Ticketnummer exakt (z. B. INC000004215474, WO…, REQ…, RITM…).
 - Der Betreff hat oft die Form «E1 / Nummer / Gerät / Ticketnummer / Strasse Nr / Etage Büro / Auftrag». title = der Auftragsteil, z. B. «Austausch: zrhlAFCB L16 G1 (POOL) – Standalone».
@@ -1186,7 +1218,14 @@ Regeln:
 - flex: true NUR wenn das Wort «Flex» vorkommt (meist bei «Kategorien»), sonst false.
 - technician: Zahl aus «Techniker N» (z. B. 2), sonst null.
 - address: Strasse und Nummer, mit PLZ/Ort falls vorhanden. room: Etage/Büro/Raum.
-- devices: Computernamen wie ZRHLAFCB (Grossbuchstaben).
+- Der Betreff besteht aus Teilen, getrennt durch «/». Die Reihenfolge kann wechseln – ordne jeden Teil nach seinem Muster zu:
+  · shelf: Regalplatz der Ware, Buchstabe + Zahl am Anfang (z. B. «C1», «B2»). Bei Abbau fehlt er.
+  · orderId: 6-stellige Auftrags-ID (z. B. 250880).
+  · newDevice: neues Gerät – Hostname (z. B. ZRHLAC52) ODER Asset-ID aus 8–12 Ziffern (z. B. 6200036652).
+  · ticket: INC/WO/REQ-Nummer.
+  · address und room: Strasse/Nr. sowie Etage/Büro.
+  · oldDevice: altes Gerät nach «Austausch:» oder «Abbau:» (z. B. «zrhlAA58 L13 Yoga G5»).
+- devices: alle Computernamen wie ZRHLAFCB (Grossbuchstaben).
 - contact/phone: Kontaktperson, steht meist mit Telefonnummer unter dem Auftrag.
 - task: der Auftrag in einem Satz (z. B. «Auf Grass Barbara aozbagr als POOL stagen»).
 - notes: weitere wichtige Hinweise, kurz.
@@ -1236,6 +1275,7 @@ function aiToTicket(o, fallbackDate){
     address:str(o.address), room:str(o.room), contact:str(o.contact), phone: o.phone ? fmtPhone(str(o.phone)) : '',
     email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
     notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
+    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
     raw: 'Mit KI erkannt (Claude)', done:false, ai:true };
   if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
   return t;
@@ -1431,7 +1471,7 @@ function exportIcs(){
     L.push('BEGIN:VEVENT','UID:'+t.id+'@einsatzplan','DTSTAMP:'+stamp,'DTSTART:'+d+'T'+hm(i.start),'DTEND:'+d+'T'+hm(i.end),
       'SUMMARY:'+icsEsc(`[${t.flex?'Flex':'Fix'}] ${t.ticket||''} ${t.title||''}`.trim()),
       'LOCATION:'+icsEsc(t.address),
-      'DESCRIPTION:'+icsEsc([t.room, t.contact, t.phone, t.notes].filter(Boolean).join('\n')),
+      'DESCRIPTION:'+icsEsc([t.room, t.shelf && 'Regal '+t.shelf, t.newDevice && 'Neu: '+t.newDevice, t.oldDevice && 'Alt: '+t.oldDevice, t.contact, t.phone, t.notes].filter(Boolean).join('\n')),
       'END:VEVENT');
   });
   L.push('END:VCALENDAR');
@@ -1444,6 +1484,7 @@ function copyDay(){
   P.items.filter(i => i.type === 'ticket').forEach(i => {
     const t = i.t;
     lines.push(`${fromMin(i.start)}–${fromMin(i.end)} ${t.flex?'FLEX':'FIX'} ${t.ticket||''} ${t.title?'– '+t.title:''}`.trim());
+    if(t.shelf || t.newDevice || t.orderId) lines.push('   '+[t.shelf && 'Regal '+t.shelf, t.newDevice, t.orderId && 'Auftrag '+t.orderId].filter(Boolean).join(' · '));
     if(t.address) lines.push('   '+t.address+(t.room?' · '+t.room:''));
     if(t.contact||t.phone) lines.push('   '+[t.contact,t.phone].filter(Boolean).join(' · '));
   });
@@ -1477,7 +1518,7 @@ document.addEventListener('click', e => {
     case 'copy': copyText(b.dataset.v, 'Ticketnummer kopiert'); break;
     case 'edit': { const t = state.tickets.find(x => x.id === id); if(t) openEdit(t,'stored'); break; }
     case 'editPending': { const t = state.pending.find(x => x.id === id); if(t) openEdit(t,'pending'); break; }
-    case 'newTicket': openEdit({ id:uid(), ticket:'', kind:'', title:'', date:view.date, start:'', end:'', flex:false, dur:null, address:'', room:'', contact:'', phone:'', email:'', notes:'', devices:'', raw:'', done:false }, 'new'); break;
+    case 'newTicket': openEdit({ id:uid(), ticket:'', kind:'', title:'', date:view.date, start:'', end:'', flex:false, dur:null, address:'', room:'', contact:'', phone:'', email:'', notes:'', devices:'', shelf:'', orderId:'', newDevice:'', oldDevice:'', raw:'', done:false }, 'new'); break;
     case 'deleteTicket':
       if(confirm('Ticket löschen?')){ state.tickets = state.tickets.filter(x => x.id !== id); save(); closeSheet(); renderAll(); }
       break;
