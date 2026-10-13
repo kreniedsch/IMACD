@@ -771,7 +771,7 @@ const ICON = {
 
 /* ===================== SPEICHER ===================== */
 const STORE = 'einsatzplan.v1';
-const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:20, ocrLang:'deu+eng', tech:'', nav:'google', aiOn:false, aiKey:'', aiModel:'claude-sonnet-5-5' };
+const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:20, ocrLang:'deu+eng', tech:'', nav:'google', aiOn:false, aiProvider:'gemini', aiKey:'', aiModel:'claude-sonnet-5-5', gemKey:'', gemModel:'gemini-3.6-flash' };
 let state = load();
 function load(){
   try{
@@ -1037,7 +1037,7 @@ function renderScan(){
 
   $('#previewWarn').hidden = !inPreview;
   $('#scanFoot').innerHTML = aiReady()
-    ? 'KI-Erkennung mit Claude ist aktiv.<br>Fotos werden zur Auswertung an Anthropic gesendet.'
+    ? (state.settings.aiProvider === 'claude' ? 'KI-Erkennung mit Claude ist aktiv.<br>Fotos werden zur Auswertung an Anthropic gesendet.' : 'KI-Erkennung mit Gemini ist aktiv.<br>Fotos werden zur Auswertung an Google gesendet.')
     : 'Die Texterkennung läuft direkt auf dem iPhone.<br>Es wird nichts hochgeladen.';
   const el = $('#pendingList');
   if(!state.pending.length){ el.innerHTML = ''; return; }
@@ -1099,15 +1099,23 @@ function renderData(){
 
     <div class="glabel">KI-Erkennung</div>
     <div class="group form">
-      <div class="row"><label class="k grow" for="sAiOn">Mit Claude erkennen</label><input type="checkbox" class="switch" id="sAiOn" data-set="aiOn" ${S.aiOn?'checked':''}></div>
+      <div class="row"><label class="k grow" for="sAiOn">KI verwenden</label><input type="checkbox" class="switch" id="sAiOn" data-set="aiOn" ${S.aiOn?'checked':''}></div>
+      <div class="row"><span class="k grow">Anbieter</span><div class="seg sm" style="width:200px">
+        <button class="${S.aiProvider!=='claude'?'on':''}" data-act="aiProv" data-v="gemini">Gemini (gratis)</button>
+        <button class="${S.aiProvider==='claude'?'on':''}" data-act="aiProv" data-v="claude">Claude</button></div></div>
+      ${S.aiProvider !== 'claude' ? `
+      <div class="row"><label class="k" for="sGemKey">API-Key</label><input type="password" id="sGemKey" data-set="gemKey" value="${esc(S.gemKey)}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+      <div class="row"><label class="k" for="sGemModel">Modell</label><input type="text" id="sGemModel" data-set="gemModel" value="${esc(S.gemModel)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>` : `
       <div class="row"><label class="k" for="sAiKey">API-Key</label><input type="password" id="sAiKey" data-set="aiKey" value="${esc(S.aiKey)}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
       <div class="row"><label class="k grow" for="sAiModel">Modell</label>
         <select id="sAiModel" data-set="aiModel">
           <option value="claude-sonnet-5-5" ${S.aiModel==='claude-sonnet-5-5'?'selected':''}>Sonnet 5.5 (genau)</option>
           <option value="claude-haiku-5-5" ${S.aiModel==='claude-haiku-5-5'?'selected':''}>Haiku 5.5 (günstig)</option>
-        </select></div>
+        </select></div>`}
     </div>
-    <div class="gfoot">Liest auch schräge oder unscharfe Fotos. Den API-Key erstellst du unter console.anthropic.com; jede Auswertung wird dort verrechnet. Der Key bleibt nur auf diesem iPhone und ist nicht im Backup. <b>Achtung:</b> Fotos mit Namen und Telefonnummern werden an Anthropic gesendet – kläre vorher mit OIZ bzw. Dplan, ob das erlaubt ist.</div>
+    <div class="gfoot">${S.aiProvider !== 'claude'
+      ? 'Gratis-Key unter aistudio.google.com → «Get API key». Mit Tageslimit. <b>Achtung:</b> Im Gratis-Tarif darf Google die Inhalte zur Verbesserung seiner Produkte verwenden – die Fotos enthalten Namen und Telefonnummern von Mitarbeitenden der Stadt. Vorher mit OIZ bzw. Dplan klären.'
+      : 'Key unter console.anthropic.com; jede Auswertung wird verrechnet. Fotos werden an Anthropic gesendet – vorher mit OIZ bzw. Dplan klären.'} Der Key bleibt nur auf diesem iPhone und ist nicht im Backup.</div>
 
     <div class="glabel">Lokale Texterkennung</div>
     <div class="group form">
@@ -1347,8 +1355,34 @@ async function imageToJpegB64(file){
   const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
   return blobToB64(blob);
 }
+async function aiExtractGemini(input){
+  const S = state.settings;
+  let part;
+  if(typeof input === 'string') part = { text:'Ticket-Text:\n\n' + input };
+  else if(input.type === 'application/pdf' || /\.pdf$/i.test(input.name)) part = { inline_data:{ mime_type:'application/pdf', data: await blobToB64(input) } };
+  else part = { inline_data:{ mime_type:'image/jpeg', data: await imageToJpegB64(input) } };
+  const model = (S.gemModel || DEFAULTS.gemModel).trim();
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
+    method:'POST',
+    headers:{ 'content-type':'application/json', 'x-goog-api-key':S.gemKey },
+    body: JSON.stringify({ contents:[{ role:'user', parts:[part, { text:AI_PROMPT }] }], generationConfig:{ responseMimeType:'application/json', temperature:0 } })
+  });
+  const data = await r.json().catch(() => ({}));
+  if(!r.ok){
+    const msg = data.error && data.error.message || ('HTTP '+r.status);
+    if(r.status === 400 && /api key/i.test(msg)) throw new Error('API-Key ungültig');
+    if(r.status === 404) throw new Error('Modell «'+model+'» nicht gefunden – in den Einstellungen anpassen');
+    if(r.status === 429) throw new Error('Gratis-Kontingent für heute aufgebraucht');
+    throw new Error(msg);
+  }
+  const txt = ((data.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');
+  const m = txt.match(/\{[\s\S]*\}/); if(!m) throw new Error('KI-Antwort nicht lesbar');
+  const j = JSON.parse(m[0]);
+  return Array.isArray(j.tickets) ? j.tickets : [];
+}
 async function aiExtract(input){
   const S = state.settings;
+  if(S.aiProvider !== 'claude') return aiExtractGemini(input);
   let part;
   if(typeof input === 'string') part = { type:'text', text:'Ticket-Text:\n\n' + input };
   else if(input.type === 'application/pdf' || /\.pdf$/i.test(input.name)) part = { type:'document', source:{ type:'base64', media_type:'application/pdf', data: await blobToB64(input) } };
@@ -1379,7 +1413,7 @@ function aiToTicket(o, fallbackDate){
     email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
     notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
     shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
-    raw: 'Mit KI erkannt (Claude)', done:false, ai:true };
+    raw: 'Mit KI erkannt (' + (state.settings.aiProvider === 'claude' ? 'Claude' : 'Gemini') + ')', done:false, ai:true };
   if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
   return t;
 }
@@ -1392,7 +1426,7 @@ function addAiTickets(list, date){
   }
   save(); renderScan(); return n;
 }
-const aiReady = () => state.settings.aiOn && state.settings.aiKey;
+const aiReady = () => state.settings.aiOn && (state.settings.aiProvider === 'claude' ? state.settings.aiKey : state.settings.gemKey);
 
 /* ===================== OCR / PDF ===================== */
 const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
@@ -1546,7 +1580,7 @@ async function deliver(name, content, mime, preferShare){
   return true;
 }
 async function backup(){
-  const { aiKey, ...safeSettings } = state.settings;
+  const { aiKey, gemKey, ...safeSettings } = state.settings;
   const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending };
   const ok = await deliver(`imacd-backup-${iso(new Date())}.json`, JSON.stringify(data, null, 1), 'application/json', true);
   if(ok){ state.lastBackup = new Date().toISOString(); save(); renderAll(); toast('Backup erstellt'); }
@@ -1559,7 +1593,7 @@ async function importBackup(file){
     d.tickets.forEach(t => byId.set(t.id, t));
     state.tickets = [...byId.values()];
     if(Array.isArray(d.pending)){ const ids = new Set(state.pending.map(p=>p.id)); d.pending.forEach(p => { if(!ids.has(p.id)) state.pending.push(p); }); }
-    if(d.settings) state.settings = { ...DEFAULTS, ...d.settings, aiKey: state.settings.aiKey };
+    if(d.settings) state.settings = { ...DEFAULTS, ...d.settings, aiKey: state.settings.aiKey, gemKey: state.settings.gemKey };
     save(); renderAll(); toast(`${d.tickets.length} Tickets importiert`);
   }catch(e){ toast('Import fehlgeschlagen: '+e.message); }
 }
@@ -1636,6 +1670,7 @@ document.addEventListener('click', e => {
     case 'tech':
       state.settings.tech = b.dataset.v; save(); renderScan();
       toast(b.dataset.v ? `Nur Tickets für Techniker ${b.dataset.v}` : 'Alle Tickets werden übernommen'); break;
+    case 'aiProv': state.settings.aiProvider = b.dataset.v; save(); renderData(); renderScan(); break;
     case 'pmode': $('#photoMode').value = b.dataset.v; renderScan(); break;
     case 'openPaste': openPaste(); break;
     case 'pasteClip':
@@ -1690,10 +1725,10 @@ document.addEventListener('change', e => {
   if(id === 'dayInput' && e.target.value){ view.date = e.target.value; renderPlan(); return; }
   const k = e.target.dataset && e.target.dataset.set;
   if(k === 'nav'){ state.settings.nav = e.target.value; save(); renderPlan(); toast('Gespeichert'); return; }
-  if(k === 'aiOn' || k === 'aiKey' || k === 'aiModel'){
+  if(k === 'aiOn' || k === 'aiKey' || k === 'aiModel' || k === 'gemKey' || k === 'gemModel'){
     state.settings[k] = k === 'aiOn' ? e.target.checked : e.target.value.trim();
     save(); renderScan();
-    if(k === 'aiOn' && e.target.checked && !state.settings.aiKey) toast('Bitte noch den API-Key eintragen');
+    if(k === 'aiOn' && e.target.checked && !aiReady()) toast('Bitte noch den API-Key eintragen');
     else toast(k === 'aiOn' ? (e.target.checked ? 'KI-Erkennung aktiviert' : 'KI-Erkennung aus') : 'Gespeichert');
     return;
   }
