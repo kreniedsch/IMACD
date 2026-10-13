@@ -201,7 +201,9 @@ textarea.notes::placeholder{color:var(--label3)}
 .scan-hint{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;font-size:15px;background:rgba(60,60,67,.6);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);padding:10px 14px;border-radius:14px}
 .scanlist .row .k{font-variant-numeric:tabular-nums}
 /* Kalender-Auswahl */
-.chips{display:flex;gap:8px;overflow-x:auto;margin:-6px -16px 16px;padding:2px 16px;scrollbar-width:none}
+.chips{display:flex;gap:8px;margin:-8px 0 14px}
+.calbadge{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--label2);background:var(--fill);border-radius:999px;padding:5px 11px}
+.calbadge svg{width:14px;height:14px}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:none;border:0;border-radius:999px;padding:7px 14px;font-size:15px;font-weight:600;background:var(--fill);color:var(--label);display:flex;gap:6px;align-items:center}
 .chip span{font-size:12px;font-weight:600;color:var(--label2);font-variant-numeric:tabular-nums}
@@ -296,7 +298,9 @@ nav.tabs button.on{color:var(--blue)}
   <section id="tab-scan" hidden>
     <div class="lt"><div class="lt-l"><div class="eyebrow">IMACD</div><h1>Erfassen</h1></div></div>
     <div class="warn" id="previewWarn" hidden style="margin:0 0 4px"><span data-icon="warn"></span><div><b>Vorschau-Modus</b><br>Kamera-Erkennung und KI funktionieren nur, wenn die App in Safari über GitHub Pages geöffnet ist. «Text einfügen» klappt auch hier.</div></div>
-    <div class="gfoot" style="margin:2px 4px 0">Tipp: Outlook-Kalender als .ics («Vollständige Details») laden – alle Termine werden übernommen. Welchen Kalender du siehst (T1, T2, T3, HWLC …), wählst du oben im Tagesplan.</div>
+    <div class="glabel" style="margin-top:6px">Mein Kalender</div>
+    <div class="seg" id="viewSeg"></div>
+    <div class="gfoot">Der Tagesplan zeigt nur diesen Kalender. Beim Import werden immer alle Termine übernommen – Outlook-Kalender als .ics mit «Vollständige Details» laden.</div>
     <div class="tiles">
       <label class="tile" style="--c:var(--blue)"><input type="file" accept="image/*" capture="environment" id="inCam"><span class="ico" data-icon="camera"></span><div><b>Kamera</b><small>Blatt für Blatt fotografieren</small></div></label>
       <label class="tile" style="--c:var(--indigo)"><input type="file" accept="image/*,application/pdf,.pdf,text/calendar,.ics" multiple id="inFiles"><span class="ico" data-icon="photo"></span><div><b>Fotos & Dateien</b><small>Mehrere Fotos auf einmal, PDF</small></div></label>
@@ -1019,11 +1023,13 @@ function iconRow(icon, color, text, act, extra=''){
 }
 
 /* ---------- Wochenleiste ---------- */
-function renderGroups(){
+function groupCount(g){
   const dayT = state.tickets.filter(t => t.date === view.date);
-  const cnt = g => g === 'all' ? dayT.length : dayT.filter(t => (t.group || '') === g).length;
-  $('#groupChips').innerHTML = GROUPS.filter(([g]) => g === 'all' || g === viewGroup() || cnt(g) || /^T[123]$/.test(g))
-    .map(([g,l]) => `<button class="chip ${viewGroup()===g?'on':''}" data-act="view" data-v="${g}">${l}<span>${cnt(g)}</span></button>`).join('');
+  return g === 'all' ? dayT.length : dayT.filter(t => (t.group || '') === g).length;
+}
+function renderGroups(){
+  const g = viewGroup(), l = g === 'all' ? 'Alle Kalender' : g === 'HWLC' ? 'Kalender HWLC' : 'Techniker ' + g.slice(1);
+  $('#groupChips').innerHTML = `<span class="calbadge">${ICON.calendar}${l}</span>`;
 }
 function renderWeek(){
   const ws = weekStart(view.date), today = iso(new Date());
@@ -1195,6 +1201,7 @@ function renderScan(){
   const dot = $('#pendDot');
   dot.hidden = !state.pending.length; dot.textContent = state.pending.length;
 
+  $('#viewSeg').innerHTML = GROUPS.map(([g,l]) => `<button class="${viewGroup()===g?'on':''}" data-act="view" data-v="${g}">${l}${groupCount(g) ? ' · ' + groupCount(g) : ''}</button>`).join('');
   const pm = $('#photoMode').value;
   $('#pmSeg').innerHTML = [['one','Einzeln'],['merge','Zusammen']]
     .map(([v,l]) => `<button class="${pm===v?'on':''}" data-act="pmode" data-v="${v}">${l}</button>`).join('');
@@ -2156,7 +2163,8 @@ document.addEventListener('click', e => {
       setTab('plan'); toast(`${n} ${n===1?'Ticket':'Tickets'} übernommen`); break;
     }
     case 'discard': state.pending = state.pending.filter(x => x.id !== id); save(); renderAll(); break;
-    case 'view': state.settings.view = b.dataset.v; save(); renderPlan(); break;
+    case 'view': state.settings.view = b.dataset.v; save(); renderScan(); renderPlan();
+      toast(b.dataset.v === 'all' ? 'Tagesplan zeigt alle Kalender' : `Tagesplan zeigt ${b.dataset.v === 'HWLC' ? 'HWLC' : 'Techniker ' + b.dataset.v.slice(1)}`); break;
     case 'aiProv': state.settings.aiProvider = b.dataset.v; save(); renderData(); renderScan(); break;
     case 'pmode': $('#photoMode').value = b.dataset.v; renderScan(); break;
     case 'openPaste': openPaste(); break;
