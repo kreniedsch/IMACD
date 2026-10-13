@@ -495,6 +495,20 @@ function outlookEnhance(t, lines, text){
   const dev = [...new Set([...text.matchAll(/\bzrh[l1I][a-z0-9]{3,5}\b/gi)].map(m => m[0].toUpperCase().replace(/^ZRH[1I]/,'ZRHL')))];
   if(dev.length) t.devices = dev.join(', ');
 
+  // Ticketnummer aus zerstückelter Texterkennung zusammensetzen (INC + 12 Ziffern)
+  if(!t.ticket){
+    const m = text.match(/[\\|I1l!]?NC\s?([0-9Oo]{3,12})/);
+    if(m){
+      let d = m[1].replace(/[Oo]/g,'0');
+      if(d.length < 12){
+        const after = text.slice(m.index + m[0].length, m.index + m[0].length + 200);
+        const f = [...after.matchAll(/\b(\d{3,9})\b/g)].map(x => x[1]).find(x => d.length + x.length === 12);
+        if(f) d += f;
+      }
+      if(d.length === 12) t.ticket = 'INC' + d;
+    }
+  }
+
   // Beginn / Ende: «Di 13.10.2026 09:00»
   const dtRe = /(\d{1,2})\.\s?(\d{1,2})\.\s?(20\d{2})\s+(\d{1,2})[:.](\d{2})/;
   const dts = [];
@@ -506,50 +520,69 @@ function outlookEnhance(t, lines, text){
     t.dur = t.end ? toMin(t.end) - toMin(t.start) : null;
   }
 
-  // Betreff über mehrere Zeilen zusammensetzen und nach «/» zerlegen
-  const bi = lines.findIndex(l => /^\W{0,6}\b(betreff|subject)\s*:/i.test(l));
-  let betreffTitle = '';
+  // Betreff: alle Zeilen zwischen «Betreff» und «Beginn» (Outlook druckt «Ort:» mitten hinein)
+  const bi = lines.findIndex(l => /^\W{0,6}\b(betreff|subject)\s*:?/i.test(l));
+  let betreffTitle = '', betreff = '';
   if(bi >= 0){
-    let b = lines[bi].replace(/^.*?(betreff|subject)\s*:\s*/i,'');
-    for(let k=bi+1; k<lines.length && k<=bi+3 && !OL_LABEL.test(lines[k]); k++) b += ' ' + lines[k];
-    t.notes = ('Betreff: '+b.trim()) + (t.notes ? '\n'+t.notes : '');
-    const segs = b.split(/\s\/\s|\s\/|\/\s/).map(x => x.trim()).filter(Boolean);
-    const rest = [];
-    for(const sg of segs){
-      if(/^[A-Z]\d{1,2}$/.test(sg) || /^\d{4,}$/.test(sg) || /^zrh[l1I][a-z0-9]{3,5}$/i.test(sg) || new RegExp('^'+TICKET_RE.source+'$','i').test(sg)) continue;
-      if(/(strasse|str\.|gasse|weg|platz|quai|ring|allee|rain|hof|graben|bühl|buehl|matte|acker|halde|steig)\s*\d/i.test(sg)){ if(!t.address || !/\d/.test(t.address)) t.address = sg.replace(/\s+(etage|stock|büro|buero|raum)\b.*$/i,''); continue; }
-      if(/^(etage|stock|büro|buero|raum|zimmer|\d+\.?\s?og)\b/i.test(sg)){ t.room = sg; continue; }
-      rest.push(sg);
+    const stop = lines.findIndex((l,k) => k > bi && /^\W{0,3}(beginn|start|ende|serientyp|organisator|kategorien)\b/i.test(l));
+    const end = stop > bi ? stop : Math.min(lines.length, bi + 5);
+    const parts = [];
+    for(let k = bi; k < end; k++){
+      let l = lines[k].replace(/^.*?\b(betreff|subject)\s*:?\s*/i,'').replace(/^\W{0,3}(ort|location)\s*:\s*/i,'');
+      l = l.replace(/\bam (vormittag|nachmittag|morgen|abend)\b/i, m => { t.notes = (t.notes ? t.notes+'\n' : '') + 'Zeitfenster: ' + m; return ''; });
+      if(l.trim()) parts.push(l.trim());
     }
-    betreffTitle = rest.join(' · ').replace(/\s*--\s*/g,' – ');
+    betreff = parts.join(' ').replace(/\s+/g,' ').trim();
+    if(betreff) t.notes = 'Betreff: ' + betreff + (t.notes ? '\n'+t.notes : '');
+    const segs = betreff.split(/\s\/\s|\s\/|\/\s/).map(x => x.trim()).filter(Boolean);
+    for(const sg of segs){
+      if(/(strasse|str\.|gasse|weg|platz|quai|ring|allee|rain|hof|graben|bühl|buehl|matte|acker|halde|steig)\s*\d/i.test(sg) && (!t.address || !/\d/.test(t.address)))
+        t.address = sg.replace(/\s+(etage|stock|büro|buero|raum)\b.*$/i,'');
+      if(/^(etage|stock|büro|buero|raum|zimmer|\d+\.?\s?og)\b/i.test(sg) && !t.room) t.room = sg;
+    }
+    const km = betreff.match(new RegExp(KIND_RE.source + '\\s*:\\s*([^/]+)', 'i'));
+    if(km) betreffTitle = (km[1][0].toUpperCase() + km[1].slice(1) + ': ' + km[2].replace(/\s\d{5,}\b/g,'')).replace(/\s*--\s*/g,' – ').trim();
   }
 
-  // Auftrag: Zeilen nach «Kategorien» bis zur Kontaktperson
-  const ki = lines.findIndex(l => /^\W{0,3}(kategorien|categories)\b/i.test(l));
-  const nameRe = /^([A-ZÄÖÜ][a-zäöüéèàç'-]+(?:\s+[A-ZÄÖÜ][a-zäöüéèàç'-]+){1,2})[\s.,:;]*$/;
+  t.address = t.address.replace(/\bam (vormittag|nachmittag|morgen|abend)\b,?\s*/i,'').replace(/^[,\s]+/,'').trim();
+
+  // Kontaktperson: Name (evtl. mit Benutzerkürzel) direkt über einer Telefonnummer
+  const nameRe = /^([A-ZÄÖÜ][a-zäöüéèàç'-]+(?:\s+[A-ZÄÖÜ][a-zäöüéèàç'-]+){1,2})(?:\s+([a-z][a-z0-9]{3,10}))?[\s.,:;]*$/;
   const phoneOnly = l => /^(?:t(?:el)?\.?:?\s*)?(?:\+|00)?[\d\s()\/.-]{9,}$/i.test(l.trim());
-  let task = [];
-  if(ki >= 0){
-    for(let k=ki+1; k<lines.length && k<ki+6; k++){
-      const l = lines[k];
-      if(/bitte beschreiben|anliegen/i.test(l) || phoneOnly(l) || (nameRe.test(l) && lines[k+1] && phoneOnly(lines[k+1]))) break;
-      const letters = (l.match(/[a-zäöü]/gi) || []).length;
-      if(l.length >= 8 && letters / l.length > .6) task.push(l);
+  const isName = l => { const m = l.match(nameRe); if(!m) return null;
+    if(/^(bitte|client|auf|der|die|das|neue[rs]?|ger(ä|a)t|hallo|danke|termin|kein|nicht)$/i.test(m[1].split(/\s+/)[0])) return null;
+    if(m[2] && /\.\s*$/.test(l)) return null; return m; };
+  const ki = lines.findIndex(l => /^\W{0,3}(kategorien|categories)\b/i.test(l));
+  const from = ki >= 0 ? ki + 1 : 0;
+  for(let k = from; k < lines.length - 1; k++){
+    const m = isName(lines[k]);
+    if(m && phoneOnly(lines[k+1]) && !/betriebspartner|service|desk/i.test(m[1])){
+      t.contact = m[1] + (m[2] ? ' ('+m[2]+')' : '');
+      t.phone = fmtPhone(lines[k+1].replace(/^t(?:el)?\.?:?\s*/i,''));
+      if(lines[k+2] && phoneOnly(lines[k+2])) t.notes = (t.notes ? t.notes+'\n' : '') + 'Weitere Nr.: ' + fmtPhone(lines[k+2]);
+      break;
     }
   }
-  // Kontaktperson: Name direkt über einer Telefonnummer
-  for(let k=0; k<lines.length-1; k++){
-    const m = lines[k].match(nameRe);
-    if(m && phoneOnly(lines[k+1]) && !/betriebspartner|service|desk/i.test(m[1])){ t.contact = m[1]; t.phone = fmtPhone(lines[k+1].replace(/^t(?:el)?\.?:?\s*/i,'')); break; }
+
+  // Auftrag: Textzeilen nach «Kategorien» (ohne Name/Telefon), bis zum Formular-Teil
+  const task = [];
+  if(ki >= 0){
+    for(let k = ki + 1; k < lines.length && task.length < 3; k++){
+      const l = lines[k];
+      if(/bitte beschreiben|konnten sie|wie k(ö|o)nnen wir|haben sie f/i.test(l)) break;
+      if(phoneOnly(l) || (isName(l) && lines[k+1] && phoneOnly(lines[k+1]))) continue;
+      const letters = (l.match(/[a-zäöü]/gi) || []).length;
+      if(l.length >= 8 && letters / l.length > .6) task.push(l.replace(/\s+\S{1,2}$/,''));
+    }
   }
   if(task.length) t.notes = (t.notes ? t.notes+'\n' : '') + 'Auftrag: ' + task.join(' ');
 
-  // Titel: sauberer Betreff mit Auftragsart, sonst Auftragszeile
+  // Titel: Auftragsart aus dem Betreff, sonst Auftragszeile
   if(bi >= 0 || ki >= 0){
-    if(betreffTitle && KIND_RE.test(betreffTitle)) t.title = betreffTitle;
-    else if(task.length) t.title = task[0];
-    else if(betreffTitle) t.title = betreffTitle;
+    if(betreffTitle) t.title = betreffTitle;
+    else if(task.length) t.title = task.join(' ');
   }
+  t.title = t.title.replace(/(\s+[^\w\s(]{1,2})+$/,'').replace(/\s+[A-Za-zÄÖÜäöü]$/,'').trim();
   const k2 = (t.title + ' ' + text).match(KIND_RE);
   if(k2){ const w = k2[1].toLowerCase(); t.kind = /^stag/.test(w) ? 'Staging' : /^z/.test(w) ? 'Umzug' : w[0].toUpperCase()+w.slice(1); }
 }
