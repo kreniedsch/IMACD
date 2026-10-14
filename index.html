@@ -3109,24 +3109,51 @@ function buildIntro(D){
   // ---------- Szene 2: Autositz ----------
   const bld = off => [0, 50, 85, 140, 190, 230, 290, 330, 370].map((x, i) => `<rect x="${off + x}" y="${330 + (i * 37) % 60}" width="${30 + (i * 13) % 26}" height="${110 - (i * 37) % 60}" fill="#5b6f96" opacity=".55"/>`).join('');
   const poles = off => [0, 130, 260].map(x => `<rect x="${off + x}" y="300" width="7" height="130" fill="#1d2230"/><rect x="${off + x - 14}" y="300" width="24" height="5" rx="2" fill="#1d2230"/><circle cx="${off + x - 12}" cy="307" r="3" fill="#ffe27a"/>`).join('');
-  const s3 = `<g${st(op(3.7, 4.0, 5.35, 5.65))}><g class="vb" style="transform-origin:195px 520px;animation:${tr([[3.7, 'transform:scale(1.08)'], [5.65, 'transform:scale(1)']], 'linear')}">
-      <rect x="-700" y="100" width="1800" height="1000" fill="#151821"/>
-      <clipPath id="inWin"><rect x="26" y="236" width="338" height="196" rx="30"/></clipPath>
-      <g clip-path="url(#inWin)">
-        <rect x="0" y="230" width="390" height="210" fill="url(#inSky)"/>
-        <g style="animation:in-scroll 2.4s linear infinite">${bld(0)}${bld(400)}</g>
-        <rect x="0" y="420" width="390" height="20" fill="#3b4150"/>
-        <g style="animation:in-scroll .7s linear infinite">${poles(0)}${poles(400)}</g>
-        <rect x="104" y="250" width="182" height="30" rx="15" fill="#000" fill-opacity=".45"/>
-        <path d="M122 258 a5 5 0 0 1 10 0 c0 4 -5 9 -5 9 s-5 -5 -5 -9 z" fill="#ff453a"/>
-        <text x="138" y="270" font-size="12" font-weight="700" fill="#fff" ${FONT}>${esc(D.addr.length > 22 ? D.addr.slice(0, 21) + '…' : D.addr)}</text>
+  // Szene 3: Techniker bringt das Notebook zum Kunden (Vogelperspektive)
+  K.push('@keyframes inStepA{0%,100%{transform:translateY(-7px)}50%{transform:translateY(7px)}}@keyframes inStepB{0%,100%{transform:translateY(7px)}50%{transform:translateY(-7px)}}');
+  const tree = (x, y, r) => `<circle cx="${x + 4}" cy="${y + 5}" r="${r}" fill="#000" opacity=".18"/><circle cx="${x}" cy="${y}" r="${r}" fill="#4f9a4a"/><circle cx="${x - r * .3}" cy="${y - r * .3}" r="${r * .55}" fill="#67b35f"/>`;
+  const roof = (x, y, w, h, c) => `<rect x="${x + 6}" y="${y + 8}" width="${w}" height="${h}" fill="#000" opacity=".2"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}"/><rect x="${x + 8}" y="${y + 8}" width="${w - 16}" height="${h - 16}" fill="#fff" opacity=".08"/>`;
+  const walker = `<g class="vb" style="animation:${tr([[3.85, 'transform:translate(250px,760px) rotate(0deg) scale(1.3)'], [5.05, 'transform:translate(250px,445px) rotate(0deg) scale(1.3)'], [5.25, 'transform:translate(262px,420px) rotate(70deg) scale(1.3)'], [5.5, 'transform:translate(300px,412px) rotate(90deg) scale(1.3)']], 'linear')}">
+      <ellipse cx="3" cy="4" rx="22" ry="14" fill="#000" opacity=".2"/>
+      <ellipse cx="-8" cy="4" rx="5" ry="8" fill="#1d1f24" style="animation:inStepA .5s ease-in-out infinite"/>
+      <ellipse cx="8" cy="4" rx="5" ry="8" fill="#1d1f24" style="animation:inStepB .5s ease-in-out infinite"/>
+      <ellipse cx="0" cy="0" rx="21" ry="11" fill="#2d5a9c"/>
+      <ellipse cx="-19" cy="-4" rx="5" ry="9" fill="#264d86" style="animation:inStepB .5s ease-in-out infinite"/>
+      <ellipse cx="19" cy="-4" rx="5" ry="9" fill="#264d86" style="animation:inStepA .5s ease-in-out infinite"/>
+      <g transform="translate(0,-26)">
+        <rect x="-19" y="-12" width="38" height="25" rx="2.5" fill="url(#inAlu)" stroke="#8d939c" stroke-width=".8"/>
+        <rect x="3" y="-10" width="14" height="5" fill="#fff"/><rect x="4" y="-9.3" width="3.4" height="3.4" fill="#111"/><rect x="8.5" y="-8.6" width="7.5" height="1.3" fill="#111"/>
+        <circle cx="-17" cy="9" r="3.4" fill="#e0b48f"/><circle cx="17" cy="9" r="3.4" fill="#e0b48f"/>
       </g>
-      <rect x="26" y="236" width="338" height="196" rx="30" fill="none" stroke="#0c0e13" stroke-width="12"/>
-      <rect x="140" y="384" width="110" height="58" rx="24" fill="#3a404d"/>
-      <rect x="62" y="426" width="266" height="300" rx="44" fill="#3a404d"/>
-      <path d="M90 480 h210 M90 560 h210 M90 640 h210" stroke="#2c313c" stroke-width="3"/>
-      <polygon points="300,430 318,442 118,722 100,710" fill="#1e2129"/><rect x="96" y="700" width="26" height="16" rx="4" fill="#9aa1ae"/>
-      <g style="animation:in-bump .26s ease-in-out infinite">${lapTop({ x:195, y:585, s:1.05, r:-4 })}</g>
+      <circle cx="0" cy="0" r="9.5" fill="#3a2a20"/><circle cx="0" cy="-2" r="7" fill="#4a3628"/>
+    </g>`;
+  const s3 = `<g${st(op(3.7, 4.0, 5.4, 5.65))}><g class="vb" style="transform-origin:250px 520px;animation:${tr([[3.7, 'transform:scale(1.12) translateY(-40px)'], [5.65, 'transform:scale(1) translateY(30px)']], 'linear')}">
+      <rect x="-700" y="-200" width="1800" height="1400" fill="#c9d1c3"/>
+      <rect x="140" y="-200" width="90" height="1200" fill="#4a505a"/>
+      ${Array.from({ length: 16 }, (_, i) => `<rect x="183" y="${-60 + i * 60}" width="4" height="30" fill="#fff" opacity=".85"/>`).join('')}
+      <rect x="230" y="-200" width="40" height="1200" fill="#e6e2da"/><rect x="104" y="-200" width="36" height="1200" fill="#e6e2da"/>${roof(-40, 0, 136, 150, '#a3786a')}${roof(278, -20, 150, 160, '#8f98a6')}
+      ${Array.from({ length: 30 }, (_, i) => `<path d="M230 ${110 + i * 30} h40" stroke="#d3cec4" stroke-width="1"/>`).join('')}
+      ${roof(-40, 180, 136, 150, '#8f98a6')}${roof(-40, 360, 136, 120, '#a3786a')}${roof(-40, 510, 136, 170, '#9aa3ae')}${roof(-40, 710, 136, 140, '#8f98a6')}
+      ${roof(278, 160, 150, 150, '#9aa3ae')}${roof(278, 540, 150, 140, '#a3786a')}${roof(278, 700, 150, 160, '#8f98a6')}
+      <g>${roof(278, 340, 150, 170, '#c6ccd6')}
+        <rect x="278" y="340" width="150" height="170" fill="none" stroke="#0a84ff" stroke-width="4"${st(tr([[4.6, 'opacity:0'], [4.9, 'opacity:1']]))}/>
+        <rect x="272" y="400" width="10" height="26" rx="2" fill="#6b4a32"/></g>
+      ${tree(120, 300, 13)}${tree(120, 620, 15)}${tree(254, 300, 11)}${tree(254, 520, 12)}${tree(254, 690, 11)}
+      <g class="vb" transform="translate(186,640)">
+        <rect x="-26" y="-58" width="52" height="116" rx="12" fill="#000" opacity=".2" transform="translate(5,6)"/>
+        <rect x="-24" y="-58" width="48" height="116" rx="11" fill="#f4f5f7" stroke="#c9ccd2"/>
+        <rect x="-20" y="-50" width="40" height="24" rx="6" fill="#2b3442"/>
+        <rect x="-18" y="-20" width="36" height="70" rx="4" fill="#e6e8ec"/>
+        ${[-8, 4, 16, 28, 40].map(y => `<path d="M-16 ${y} h32" stroke="#d2d5db"/>`).join('')}
+        <rect x="-29" y="-40" width="6" height="8" rx="2" fill="#2b3442"/><rect x="23" y="-40" width="6" height="8" rx="2" fill="#2b3442"/>
+        <text x="0" y="22" text-anchor="middle" font-size="9" font-weight="800" fill="#2a6dc0" transform="rotate(-90 0 22)" ${FONT}>dplan</text>
+      </g>
+      <g style="transform-origin:center;animation:${pop(4.2)}">
+        <rect x="150" y="300" width="190" height="32" rx="16" fill="#000" fill-opacity=".6"/>
+        <path d="M166 309 a5.5 5.5 0 0 1 11 0 c0 4.5 -5.5 10 -5.5 10 s-5.5 -5.5 -5.5 -10 z" fill="#ff453a"/>
+        <text x="183" y="321" font-size="12" font-weight="700" fill="#fff" ${FONT}>${esc(D.addr.length > 22 ? D.addr.slice(0, 21) + '…' : D.addr)}</text>
+      </g>
+      ${walker}
     </g></g>`;
 
   // ---------- Szene 3: Arbeitsplatz Kunde – aufklappen ----------
