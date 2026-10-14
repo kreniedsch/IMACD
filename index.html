@@ -1310,6 +1310,8 @@ function renderPlan(){
   if(state.tickets.length && lb > 1 && lb <= 7 && (dow === 5 || dow === 6 || dow === 0)) notes.push(iconRow('upload','orange','Wochenende: Backup erstellen','backup'));
   else if(state.tickets.length && lb > 7) notes.push(iconRow('upload','orange', state.lastBackup ? 'Backup ist älter als 7 Tage' : 'Noch kein Backup erstellt','backup'));
   const miss = missingOld(state.tickets.filter(t => t.date === view.date));
+  const lk = lookupOld(state.tickets.filter(t => t.date === view.date));
+  if(lk.length) notes.unshift(iconRow('qr','indigo', `${lk.length} ${lk.length === 1 ? 'Altgerät' : 'Altgeräte'} nur mit Seriennr. – Asset-ID nachschlagen`, 'openMissing', 'data-v="day"'));
   if(miss.length) notes.unshift(iconRow('warn','orange', `<b>${miss.length} ${miss.length === 1 ? 'erledigtes Ticket' : 'erledigte Tickets'} ohne Alt-Scan</b>`, 'openMissing', 'data-v="day"'));
   if(notes.length) h += `<div class="group" style="margin-bottom:14px">${notes.join('')}</div>`;
 
@@ -1843,12 +1845,19 @@ function noteHtml(t){
 }
 const hasOldScan = t => (t.scans || []).some(x => /^Alt/.test(x.what || ''));
 function missingOld(list){ return list.filter(t => t.done && needsOldScan(t) && !hasOldScan(t) && visible(t)); }
+function lookupOld(list){ return list.filter(t => visible(t) && needsAssetLookup(t)); }
 function inRangeT(range){ const today = iso(new Date()), ws = weekStart(today); return t => range === 'day' ? t.date === view.date : range === 'week' ? (t.date >= ws && t.date <= addDays(ws, 6)) : true; }
 function openMissing(range){
   const L = missingOld(state.tickets.filter(inRangeT(range))).sort((a,b) => (a.date+(a.start||'')).localeCompare(b.date+(b.start||'')));
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Schliessen</button><div class="sh-title">Alt-Scan fehlt</div><span></span></div>
     <div class="gfoot" style="margin-top:6px">Erledigte Tickets mit Austausch/Abbau, bei denen kein altes Gerät gescannt wurde. Antippen und nachscannen oder die Asset-ID im Ticket eintragen.</div>
+    ${(() => { const S = lookupOld(state.tickets.filter(inRangeT(range))); return S.length ? `<div class="glabel">Asset-ID nachschlagen (nur Seriennr.)</div><div class="group">${S.map(t => `
+      <div class="row tap" data-act="detail" data-id="${t.id}"><span class="sq" style="--c:var(--indigo)">${ICON.qr}</span>
+        <div class="k"><div class="fx1 ellip">SN ${esc((t.scans || []).filter(x => /^Alt/.test(x.what || '') && isSnScan(x)).map(x => x.sn || x.code).join(', '))}</div>
+          <div class="fx2 ellip">${esc([t.ticket, t.oldDevice, t.address].filter(Boolean).join(' · '))}</div></div>
+        <button class="callbtn" style="--green:var(--blue)" data-act="copy" data-v="${esc((t.scans || []).filter(x => isSnScan(x)).map(x => x.sn || x.code)[0] || '')}" aria-label="Kopieren">${ICON.copy}</button></div>`).join('')}</div>` : ''; })()}
+    <div class="glabel">Alt-Scan fehlt</div>
     <div class="group" style="margin-top:10px">${L.length ? L.map(t => `
       <div class="row tap" data-act="detail" data-id="${t.id}">
         <span class="sq" style="--c:var(--orange)">${ICON.warn}</span>
@@ -1870,7 +1879,7 @@ function openFinish(id){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
   const sc = t.scans || [];
   const list = sc.map(x => `<div class="row"><span class="sq" style="--c:var(--${/^Alt/.test(x.what) ? 'orange' : /^Neu/.test(x.what) ? 'green' : 'indigo'})">${ICON.qr}</span>
-      <div class="k"><div class="fx1">${esc(x.code)}</div><div class="fx2">${esc(x.what || 'gescannt')}</div></div></div>`).join('');
+      <div class="k"><div class="fx1">${esc(x.code)}${x.host ? ' · ' + esc(x.host) : ''}</div><div class="fx2">${esc((x.what || 'gescannt') + (isSnScan(x) ? ' · Seriennr. – Asset-ID nachschlagen' : '') + (x.manual ? ' · von Hand' : ''))}</div></div></div>`).join('');
   const oldCount = sc.filter(x => /^Alt/.test(x.what)).length;
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Abschliessen</div><span></span></div>
@@ -1881,6 +1890,9 @@ function openFinish(id){
     <div class="group">${list || '<div class="row"><span class="k" style="color:var(--label2)">Noch nichts gescannt</span></div>'}</div>
     <button class="btn-fill" style="width:100%;margin-top:16px;--blue:var(--orange);background:var(--orange)" data-act="scanOld" data-id="${t.id}">${ICON.qr}${oldCount ? 'Weiteres altes Gerät scannen' : 'QR altes Gerät scannen'}</button>
     <button class="btn-tint" style="width:100%;margin-top:10px;--c:var(--green)" data-act="scanNew" data-id="${t.id}">${ICON.qr}Neues Gerät scannen (optional)</button>
+    <div class="glabel">Ohne Etikett? Von Hand eintragen</div>
+    <div class="group form"><div class="row"><input id="manOld" placeholder="Asset-ID, Seriennr. (SN#) oder Hostname" autocapitalize="characters" autocomplete="off" spellcheck="false" style="text-align:left"><button class="txtbtn bold" data-act="manOld" data-id="${t.id}">Hinzufügen</button></div></div>
+    <div class="gfoot">Seriennummer steht unten am Gerät neben «SN#». Die Asset-ID suchst du später am PC damit heraus.</div>
     ${noteHtml(t)}
     <div class="group" style="margin-top:20px">
       <div class="row tap" data-act="finishDone" data-id="${t.id}"><span class="k blue" style="font-weight:600">${oldCount ? 'Fertig – als erledigt markieren' : 'Ohne Scan als erledigt markieren'}</span></div>
@@ -2336,6 +2348,22 @@ function codeMatches(t, code){
   if(c.length >= 6 && normCode(t.notes).includes(c)) return 'Notizen';
   return null;
 }
+/* Seriennummer / Modem-Code erkennen (gelaserter Data-Matrix-Code auf dem Gerät) */
+const SN_RE = /^(?:[0-9][A-Z]{2}[0-9A-Z]{7}|(?:CZC|MXL|2UA|CNU|CND)[0-9A-Z]{7}|(?:PF|PC|MJ|R9|S1|PW|PG|MP|PB|PA)[0-9A-Z]{6})$/;
+function snOf(code){
+  const raw = String(code || '').toUpperCase();
+  const toks = raw.split(/[\s\x1d\x1e;,|]+|(?:S\/N|SN#?|SERIAL(?:\s*NO)?)\s*[:#]?/).map(x => x.replace(/[^0-9A-Z]/g, '')).filter(Boolean);
+  for(const tk of toks){
+    const ls = tk.match(/^1S[0-9A-Z]{10}([0-9A-Z]{8})$/); if(ls) return ls[1];          // Lenovo «1S» + Typ + SN
+    if(SN_RE.test(tk) && !/^\d+$/.test(tk)) return tk;
+    if(/^S[0-9][A-Z]{2}[0-9A-Z]{7}$/.test(tk)) return tk.slice(1);                      // «S» + HP-Seriennr.
+  }
+  return '';
+}
+const isModemCode = c => { const d = String(c || '').replace(/\D/g, ''); return /IMEI|EID/i.test(c) || /^\d{15}$/.test(String(c).trim()) || (/^\d{20,}$/.test(String(c).replace(/\s/g,'')) && d.length >= 20); };
+const isSnScan = x => !!(x && (x.sn || (!isAssetCode(x.code) && snOf(x.code))));
+const needsAssetLookup = t => (t.scans || []).some(x => /^Alt/.test(x.what || '') && isSnScan(x)) && !(t.scans || []).some(x => /^Alt/.test(x.what || '') && isAssetCode(x.code));
+
 /* Hostname vom Etikett lesen (QR enthält nur die Asset-Nr.) */
 const isAssetCode = c => /^\d{8,12}$/.test(String(c).trim());
 const hostCanon = h => { h = normCode(h); return h.slice(0, 4) + h.slice(4).replace(/[OQ]/g,'0').replace(/I/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6'); };
@@ -2380,6 +2408,13 @@ async function hostCheck(code, frame, expected){
 }
 function handleScan(code, format, frame){ return handleScanAsync(code, format, frame); }
 async function handleScanAsync(code, format, frame){
+  if(isModemCode(code)){
+    flash(false, 'Modem-Code (IMEI)', 'Das ist der LTE-Code. Bitte den Code neben «SN#» scannen.');
+    if(scan.id){ scan.mode === 'old' || scan.mode === 'new' ? openFinish(scan.id) : openDetail(scan.id); }
+    return;
+  }
+  const sn = !isAssetCode(code) ? snOf(code) : '';
+  if(sn) code = sn;
   // Ticket-Inhalt im QR (z. B. Kalendereintrag oder Mail-Text)
   if(/BEGIN:VEVENT|Betreff\s*:/i.test(code)){
     const n = addCandidates(textToBlocks(code), $('#scanDate').value || view.date);
@@ -2391,6 +2426,12 @@ async function handleScanAsync(code, format, frame){
     let m = codeMatches(t, code), host = '';
     if((t.scans || []).some(x => normCode(x.code) === normCode(code))){ toast('Dieser Code ist schon gespeichert'); openFinish(t.id); return; }
     const exp = hostsOf(mode === 'old' ? t.oldDevice : t.newDevice);
+    if(!m && sn){
+      (t.scans ||= []).push({ code: sn, sn, what: label + (mode === 'old' ? '' : ' (Seriennr.)'), at: new Date().toISOString() });
+      save(); openFinish(t.id);
+      flash(null, `Seriennr. ${sn}`, mode === 'old' ? 'Gespeichert – Asset-ID später am PC nachschlagen' : 'Gespeichert');
+      return;
+    }
     if(!m && exp.length && isAssetCode(code)){
       const r = await hostCheck(code, frame, exp);
       if(r && r.match){ m = label; host = r.match; flash(true, `${r.match} stimmt`, `${label} · Asset ${code}`); }
@@ -2422,7 +2463,7 @@ async function handleScanAsync(code, format, frame){
     // Unbekannt (z. B. Asset-Nr. auf dem Etikett, im Ticket steht der Hostname) → zuordnen
     showSheet(`<div class="grabber"></div>
       <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Gescannt</div><span></span></div>
-      <div class="group" style="margin-top:8px"><div class="row stack"><div class="k">${/^\d{8,12}$/.test(code) ? 'Asset-Nr.' : 'Code'}</div><div class="v" style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums">${esc(code)}</div></div></div>
+      <div class="group" style="margin-top:8px"><div class="row stack"><div class="k">${/^\d{8,12}$/.test(code) ? 'Asset-Nr.' : sn ? 'Seriennummer' : 'Code'}</div><div class="v" style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums">${esc(code)}</div></div></div>
       ${host ? `<div class="group"><div class="row stack"><div class="k">Hostname auf Etikett</div><div class="v" style="font-weight:600;color:var(--red)">${esc(host)}</div></div></div>` : ''}
       <div class="gfoot">${readInfo ? esc(readInfo) + ' ' : ''}Dieser Code steht nicht im Ticket. Welches Gerät ist das?</div>
       <div class="group" style="margin-top:16px">
@@ -2459,7 +2500,7 @@ async function handleScanAsync(code, format, frame){
     <div class="sh-nav"><span></span><div class="sh-title">Gescannt</div><button class="txtbtn bold" data-act="closeSheet">Fertig</button></div>
     <div class="group" style="margin-top:8px"><div class="row stack"><div class="k">${esc(format || 'Code')}</div><div class="v" style="font-variant-numeric:tabular-nums">${esc(code)}</div></div></div>
     ${fHosts.length ? `<div class="group"><div class="row stack"><div class="k">Hostname auf Etikett</div><div class="v" style="font-weight:600">${esc(fHosts.join(', '))}</div></div></div>` : ''}
-    <div class="gfoot">Kein Ticket mit diesem ${fHosts.length ? 'Hostnamen' : 'Code'} gefunden.</div>
+    <div class="gfoot">${sn ? `Seriennummer erkannt. Öffne das Ticket und scanne dort beim Abschliessen, damit sie dem alten Gerät zugeordnet wird.` : `Kein Ticket mit diesem ${fHosts.length ? 'Hostnamen' : 'Code'} gefunden.`}</div>
     <div class="group" style="margin-top:16px">
       <div class="row tap" data-act="copy" data-v="${esc(code)}"><span class="k blue">Kopieren</span></div>
       ${isUrl ? `<a class="row tap" href="${esc(code)}" target="_blank" rel="noopener"><span class="k blue">Link öffnen</span></a>` : ''}
@@ -2490,9 +2531,10 @@ function inventoryRows(range){
       'Art': t.kind || '', 'Standort': t.address || '', 'Etage/Büro': t.room || '', 'Kontakt': t.contact || '',
       'Erledigt': t.done ? 'Ja' : 'Nein', 'Notiz': t.done ? noteText(t) : '' };
     const add = (status, code, desc, scanned, host) => {
-      const isAsset = /^\d{8,12}$/.test(code), isHost = /^zrh[lehtw][a-z0-9]{3,5}$/i.test(code);
+      const isAsset = /^\d{8,12}$/.test(code), isHost = /^zrh[lehtw][a-z0-9]{3,5}$/i.test(code), sn = !isAsset && !isHost ? snOf(code) : '';
       rows.push({ ...base, 'Typ': deviceType(isHost ? code : host || code, desc), 'Status': status,
-        'Asset-ID': isAsset ? code : '', 'Hostname': (isHost ? code : host || '').toUpperCase(), 'Code (anderer)': !isAsset && !isHost ? code : '',
+        'Asset-ID': isAsset ? code : '', 'Hostname': (isHost ? code : host || '').toUpperCase(), 'Seriennr.': sn, 'Code (anderer)': !isAsset && !isHost && !sn ? code : '',
+        'Hinweis': sn && /^Alt/.test(status) ? 'Asset-ID nachschlagen' : '',
         'Beschreibung': desc || '', 'Gescannt': scanned ? 'Ja' : 'Nein' });
     };
     const scans = t.scans || [];
@@ -2500,7 +2542,7 @@ function inventoryRows(range){
     const oldDesc = t.oldDevice || '';
     const oldHost = (t.oldDevice || '').match(/\bzrh[lehtw][a-z0-9]{3,5}\b/i), oldAsset = (t.oldDevice || '').match(/\b\d{8,12}\b/);
     // Alte Geräte (Rücknahme)
-    if(oldScans.length) oldScans.forEach((x, i) => add('Alt (zurück)', x.code, oldDesc, true, x.host || (i === 0 && oldHost && /^\d+$/.test(x.code) ? oldHost[0] : '')));
+    if(oldScans.length) oldScans.forEach((x, i) => add('Alt (zurück)', x.code, oldDesc, true, x.host || (i === 0 && oldHost && (/^\d+$/.test(x.code) || isSnScan(x)) ? oldHost[0] : '')));
     else if(t.oldDevice) add('Alt (zurück)', oldAsset ? oldAsset[0] : oldHost ? oldHost[0] : '', oldDesc, false);
     // Neue Geräte (ausgeliefert)
     const newCodes = split(t.newDevice);
@@ -2524,8 +2566,8 @@ async function exportInventory(range, mode = 'save'){
   const rows = inventoryRows(range);
   if(!rows.length){ toast('Keine Geräte im gewählten Zeitraum'); return; }
   try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
-  const cols = ['Status','Asset-ID','Hostname','Typ','Beschreibung','Incident/WO','Auftrag','Standort','Etage/Büro','Datum','Art','Kontakt','Code (anderer)','Gescannt','Erledigt','Notiz'];
-  const widths = [18,13,12,11,34,18,10,28,22,11,11,24,14,9,9,40];
+  const cols = ['Status','Asset-ID','Hostname','Seriennr.','Hinweis','Typ','Beschreibung','Incident/WO','Auftrag','Standort','Etage/Büro','Datum','Art','Kontakt','Code (anderer)','Gescannt','Erledigt','Notiz'];
+  const widths = [18,13,12,13,20,11,34,18,10,28,22,11,11,24,14,9,9,40];
   // Alte Geräte (zu buchen) immer zuerst
   const rank = r => (/^Alt/.test(r.Status) ? 0 : 1);
   rows.sort((a,b) => rank(a) - rank(b) || a.Datum.split('.').reverse().join('').localeCompare(b.Datum.split('.').reverse().join('')) || (a.Typ < b.Typ ? -1 : a.Typ > b.Typ ? 1 : 0));
@@ -2608,6 +2650,13 @@ document.addEventListener('click', e => {
     case 'scanClose': closeScanner(); if((scan.mode === 'old' || scan.mode === 'new') && scan.id) openFinish(scan.id); break;
     case 'scanTorch': toggleTorch(); break;
     case 'scanOld': openScanner('old', id); break;
+    case 'manOld': {
+      const t = state.tickets.find(x => x.id === id); if(!t) break;
+      const v = ($('#manOld').value || '').trim().toUpperCase().replace(/^SN#?\s*/,''); if(!v){ toast('Bitte Asset-ID, Seriennr. oder Hostname eingeben'); break; }
+      const sn = !isAssetCode(v) && !/^ZRH/.test(v) ? (snOf(v) || v) : '';
+      (t.scans ||= []).push({ code: sn || v, sn, host: /^ZRH/.test(v) ? v : '', what:'Altes Gerät', manual:true, at: new Date().toISOString() });
+      save(); openFinish(id); toast(sn ? `Seriennr. ${sn} gespeichert – Asset-ID später nachschlagen` : `${v} gespeichert`); break;
+    }
     case 'cnTest': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       t.closeTest = b.dataset.v; t.closeNote = null; save();
@@ -2650,7 +2699,7 @@ document.addEventListener('click', e => {
     case 'newBrand': { const t = state.tickets.find(x => x.id === id); if(!t) break; t.newBrand = t.newBrand === b.dataset.v ? '' : b.dataset.v; save(); renderPlan(); openDetail(id); break; }
     case 'assignScan': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
-      (t.scans ||= []).push({ code: b.dataset.v, host: b.dataset.h || '', what: b.dataset.w ? b.dataset.w + ' (zugeordnet)' : '', at: new Date().toISOString() });
+      (t.scans ||= []).push({ code: b.dataset.v, host: b.dataset.h || '', sn: snOf(b.dataset.v) && !isAssetCode(b.dataset.v) ? snOf(b.dataset.v) : '', what: b.dataset.w ? b.dataset.w + ' (zugeordnet)' : '', at: new Date().toISOString() });
       save(); openDetail(id); toast(b.dataset.w ? `${b.dataset.w}: ${b.dataset.v} gespeichert` : 'Gespeichert'); break;
     }
     case 'delScan': { const t = state.tickets.find(x => x.id === id); if(t && t.scans){ t.scans.splice(+b.dataset.i, 1); save(); openDetail(id); } break; }
