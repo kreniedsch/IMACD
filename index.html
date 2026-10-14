@@ -454,8 +454,6 @@ nav.tabs button.on{color:var(--blue)}
 
 <nav class="tabs">
   <button data-tab="plan" class="on"><span data-icon="calendar"></span>Tagesplan</button>
-  <button data-tab="hwlc"><span data-icon="box"></span>HWLC</button>
-  <button data-tab="move"><span data-icon="move"></span>Umzug</button>
   <button data-tab="scan"><span data-icon="scan"></span>Erfassen<span class="tdot" id="pendDot" hidden></span></button>
   <button data-tab="data"><span data-icon="sliders"></span>Einstellungen</button>
 </nav>
@@ -985,9 +983,9 @@ function groupOf(text){
   if(/post/i.test(k) || /VERSAND:/.test(text)) return 'Post';
   return '';
 }
-const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['all','Alle']];
+const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['Umzug','Umzug'],['all','Alle']];
 const viewGroup = () => state.settings.view || 'all';
-const visible = t => viewGroup() === 'all' || (t.group || '') === viewGroup();
+const visible = t => viewGroup() === 'all' || viewGroup() === 'Umzug' || (t.group || '') === viewGroup();
 function isForMe(text, myTech){
   if(!myTech) return true;
   const kat = String(text).match(/^\W{0,3}(?:kategorien|categories)\s*:?(.*)$/im);
@@ -1318,10 +1316,11 @@ function iconRow(icon, color, text, act, extra=''){
 /* ---------- Wochenleiste ---------- */
 function groupCount(g){
   const dayT = state.tickets.filter(t => t.date === view.date);
+  if(g === 'Umzug') return (state.moves || []).length;
   return g === 'all' ? dayT.length : dayT.filter(t => (t.group || '') === g).length;
 }
 function renderGroups(){
-  const g = viewGroup(), l = g === 'all' ? 'Alle Kalender' : g === 'HWLC' ? 'Kalender HWLC' : 'Techniker ' + g.slice(1);
+  const g = viewGroup(), l = g === 'all' ? 'Alle Kalender' : g === 'HWLC' ? 'Kalender HWLC' : g === 'Umzug' ? 'Umzug' : 'Techniker ' + g.slice(1);
   $('#groupChips').innerHTML = `<span class="calbadge">${ICON.calendar}${l}</span>`;
 }
 function renderWeek(){
@@ -1696,15 +1695,19 @@ function renderData(){
     </div></div></div>`;
 }
 
-function renderAll(){ renderPlan(); renderScan(); if(view.tab === 'data') renderData(); if(view.tab === 'hwlc') renderHwlc(); if(view.tab === 'move') renderMove(); }
+function renderAll(){ renderPlan(); renderScan(); if(view.tab === 'data') renderData(); if(curSec() === 'hwlc') renderHwlc(); if(curSec() === 'move') renderMove(); }
 
+// Tagesplan zeigt je nach «Mein Kalender» den Plan, HWLC oder Umzug
+const planSec = () => viewGroup() === 'HWLC' ? 'hwlc' : viewGroup() === 'Umzug' ? 'move' : 'plan';
+const curSec = () => view.tab === 'plan' ? planSec() : view.tab;
 function setTab(tab){
   view.tab = tab;
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  ['plan','hwlc','move','scan','data'].forEach(t => $('#tab-'+t).hidden = t !== tab);
-  if(tab === 'plan') renderPlan();
-  if(tab === 'hwlc') renderHwlc();
-  if(tab === 'move') renderMove();
+  const sec = curSec();
+  ['plan','hwlc','move','scan','data'].forEach(t => $('#tab-'+t).hidden = t !== sec);
+  if(sec === 'plan') renderPlan();
+  if(sec === 'hwlc') renderHwlc();
+  if(sec === 'move') renderMove();
   if(tab === 'scan') $('#scanDate').value = view.date;
   renderScan();
   if(tab === 'data') renderData();
@@ -2458,7 +2461,7 @@ function closeScanner(){
   $('#scanVideo').srcObject = null; $('.scan-frame').classList.remove('hit');
   $('#scanner').hidden = true; $('#scanMsg').hidden = true; scan.paused = false;
   if(!$('#sheetWrap').classList.contains('open')) document.body.style.overflow = '';
-  if(CONT_MODES.has(scan.mode)){ if(view.tab === 'hwlc') renderHwlc(); if(view.tab === 'move') renderMove(); }
+  if(CONT_MODES.has(scan.mode)){ if(curSec() === 'hwlc') renderHwlc(); if(curSec() === 'move') renderMove(); }
 }
 async function toggleTorch(){
   const track = scan.stream && scan.stream.getVideoTracks()[0]; if(!track) return;
@@ -2922,7 +2925,7 @@ document.addEventListener('click', e => {
     }
     case 'discard': state.pending = state.pending.filter(x => x.id !== id); save(); renderAll(); break;
     case 'view': state.settings.view = b.dataset.v; save(); renderScan(); renderPlan();
-      toast(b.dataset.v === 'all' ? 'Tagesplan zeigt alle Kalender' : `Tagesplan zeigt ${b.dataset.v === 'HWLC' ? 'HWLC' : 'Techniker ' + b.dataset.v.slice(1)}`); break;
+      toast(b.dataset.v === 'all' ? 'Tagesplan zeigt alle Kalender' : `Tagesplan zeigt ${b.dataset.v === 'HWLC' ? 'HWLC' : b.dataset.v === 'Umzug' ? 'Umzug' : 'Techniker ' + b.dataset.v.slice(1)}`); break;
     case 'aiProv': state.settings.aiProvider = b.dataset.v; save(); renderData(); renderScan(); break;
     case 'pmode': $('#photoMode').value = b.dataset.v; renderScan(); break;
     case 'openPaste': openPaste(); break;
@@ -2970,9 +2973,9 @@ document.addEventListener('click', e => {
       if(r.ask){ showSheet(`<div class="grabber"></div><div class="sh-nav"><span></span><div class="sh-title">${esc(r.title)}</div><span></span></div><div class="gfoot" style="text-align:center;margin:6px 0 12px">${esc(r.sub || '')}</div><div class="group">${r.ask.map(([l], k) => `<div class="row tap" data-act="manAsk" data-i="${k}" data-m="${b.dataset.act === 'hwlcManAdd' ? 'hwlc' : 'move'}"><span class="k blue">${esc(l)}</span></div>`).join('')}</div>`, 'manask'); manAskFns = r.ask; break; }
       const m = $('#manMsg'); if(m){ m.innerHTML = `<b style="color:var(--${r.ok === true ? 'green' : r.ok === false ? 'red' : 'orange'})">${esc(r.title)}</b>${r.sub ? ' · ' + esc(r.sub) : ''}`; }
       if(r.ok) { i.value = ''; i.focus(); }
-      view.tab === 'hwlc' ? renderHwlc() : renderMove(); break;
+      curSec() === 'hwlc' ? renderHwlc() : renderMove(); break;
     }
-    case 'manAsk': { const fn = manAskFns && manAskFns[+b.dataset.i]; const r = fn ? fn[1]() : null; manAskFns = null; hwlcManualSheet(b.dataset.m); if(r) setTimeout(() => { const m = $('#manMsg'); if(m) m.innerHTML = `<b>${esc(r.title)}</b>${r.sub ? ' · ' + esc(r.sub) : ''}`; }, 50); view.tab === 'hwlc' ? renderHwlc() : renderMove(); break; }
+    case 'manAsk': { const fn = manAskFns && manAskFns[+b.dataset.i]; const r = fn ? fn[1]() : null; manAskFns = null; hwlcManualSheet(b.dataset.m); if(r) setTimeout(() => { const m = $('#manMsg'); if(m) m.innerHTML = `<b>${esc(r.title)}</b>${r.sub ? ' · ' + esc(r.sub) : ''}`; }, 50); curSec() === 'hwlc' ? renderHwlc() : renderMove(); break; }
     case 'hwlcDel': { const h = hwlcCur(); if(h){ h.items = (h.items || []).filter(x => x.code !== b.dataset.v); save(); renderHwlc(); toast('Gelöscht'); } break; }
     case 'hwlcExcel': hwlcExcel(b.dataset.v); break;
     case 'hwlcNew': hwlcNewSheet(); break;
@@ -3359,7 +3362,7 @@ function meter(ist, soll){
 function renderHwlc(){
   const el = $('#tab-hwlc'); if(!el) return;
   const L = hwlcList(), h = hwlcCur();
-  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Rücknahme</div><h1>HWLC</h1></div>
+  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Tagesplan · Kalender HWLC</div><h1>HWLC</h1></div>
     <div class="lt-r"><button class="circle" data-act="hwlcNew" aria-label="Tranche anlegen">${ICON.plus}</button></div></div>`;
   if(!h){
     el.innerHTML = head + `<div class="empty"><h3>Keine Tranche</h3><p>Kalender (.ics) unter «Erfassen» importieren. Die HWLC-Tranche mit Dienstabteilung, Datum und Anzahl Geräte wird automatisch erkannt.</p>
@@ -3391,6 +3394,8 @@ function renderHwlc(){
     ${(h.notes || []).length ? `<div class="glabel">Wichtige Infos</div><div class="info-box">${h.notes.map(esc).join('\n\n')}</div>` : ''}
     ${(h.rows || []).length ? `<div class="glabel">Auftrag laut Kalender</div><div class="group">${h.rows.map(r => `<div class="row"><span class="k"><b>${r.count == null ? '–' : r.count}</b> · ${esc(r.auftrag)}<br><small style="color:var(--label2)">${esc(r.desc)}${(h.places || []).length > 1 && r.place ? ' · ' + esc(r.place) : ''}</small></span></div>`).join('')}</div>` : ''}
     ${S.lief ? `<div class="gfoot">${S.lief} Geräte als Lieferung/Aufbau – zählen nicht zur Rücknahme.</div>` : ''}
+    ${(() => { const T = state.tickets.filter(t => t.group === 'HWLC' && (t.date === h.date || t.date === iso(new Date()))).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+      return T.length ? `<div class="glabel">HWLC-Termine</div><div class="group">${T.map(t => `<div class="row tap" data-act="detail" data-id="${t.id}"><span class="k ellip">${esc((String(t.raw || '').split('\n')[0].replace(/^Betreff:\s*/, '') || t.title).slice(0, 80))}<br><small style="color:var(--label2)">${esc(longDate(t.date))}${t.start ? ' · ' + esc(t.start) : ''}</small></span><span class="chev">${ICON.chev}</span></div>`).join('')}</div>` : ''; })()}
     <div class="glabel">Erfassen als</div>
     <div class="seg" id="hwModeSeg">${[['alt', 'Alt'], ['wieder', 'Wiedereinsatz'], ['neu', 'Neu']].map(([v, l]) => `<button class="${mode === v ? 'on' : ''}" data-act="hwlcMode" data-v="${v}">${l}</button>`).join('')}</div>
     <div class="gfoot">Der Typ kommt aus der Nummer: 41/42… Monitor, 62/72… Dockingstation, 22/32… Host.</div>
@@ -3584,7 +3589,7 @@ const statusBadge = x => x.status === 'auf' ? `<span class="badge green">→ ${e
 function renderMove(){
   const el = $('#tab-move'); if(!el) return;
   const M = state.moves || [], m = moveCur();
-  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Move</div><h1>Umzug</h1></div>
+  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Tagesplan · Kalender Umzug</div><h1>Umzug</h1></div>
     <div class="lt-r"><button class="circle" data-act="moveNew" aria-label="Neuer Umzug">${ICON.plus}</button></div></div>`;
   const withAtt = state.tickets.filter(t => (t.attach || []).length || /umzug|begehung|\bmove\b/i.test(t.title + ' ' + (t.raw || '').split('\n')[0]))
     .sort((a, b) => (b.date + (b.start || '')).localeCompare(a.date + (a.start || ''))).slice(0, 6);
