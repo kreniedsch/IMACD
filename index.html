@@ -3094,16 +3094,16 @@ function buildIntro(D){
       ${Array.from({ length: 13 }, (_, i) => `<rect x="${12 + i * 30}" y="616" width="12" height="4" rx="2" fill="#5a616c"/>`).join('')}
       <rect x="-700" y="634" width="1800" height="400" fill="#4a515c"/>
       <rect x="14" y="640" width="96" height="24" rx="2" fill="#e8edf3"/><text x="62" y="658" text-anchor="middle" font-size="15" font-weight="800" fill="#2a6dc0" ${FONT}>dplan</text>`;
-  const s1 = `<g${st(tr([[3.55, 'opacity:1'], [3.85, 'opacity:0']]))}><g class="vb" style="transform-origin:195px 520px;animation:${tr([[0, 'transform:scale(1.08)'], [3.8, 'transform:scale(1)']], 'linear')}">
+  // Szene 1: Etikette drauf (Nahaufnahme von oben, wie auf dem Foto)
+  const s0 = `<g${st(tr([[0, 'opacity:1'], [1.15, 'opacity:1'], [1.4, 'opacity:0']]))}>
+      <rect x="-700" y="100" width="1800" height="1000" fill="#1c1e23"/>
+      ${Array.from({ length: 22 }, (_, i) => `<path d="M${(i * 53) % 390} ${200 + (i * 97) % 560} l${8 + i % 9} ${-3 + i % 5}" stroke="#5a5e66" stroke-width=".8" opacity=".5"/>`).join('')}
+      <g style="transform-origin:center;animation:${tr([[0, 'transform:scale(.9)'], [1.4, 'transform:scale(1.04)']], 'ease-out')}">${lapTop({ x:195, y:500, s:1.45, sticker:.45, label:.75 })}</g>
+    </g>`;
+  // Szene 2: Staging im Regal – aufgeklappt, danach wieder zu
+  const s1 = `<g${st(tr([[1.25, 'opacity:0'], [1.45, 'opacity:1'], [3.55, 'opacity:1'], [3.85, 'opacity:0']]))}><g class="vb" style="transform-origin:195px 520px;animation:${tr([[1.25, 'transform:scale(1.08)'], [3.85, 'transform:scale(1)']], 'linear')}">
       ${shelf}
-      <g${st(tr([[0, 'opacity:1'], [2.55, 'opacity:1'], [2.75, 'opacity:0']]))}>
-        ${lapFront({ x:195, y:612, s:1.18, screen:'staging', prog:[.45, 1.55], type:[1.75, 2.05], slip:[.2, .75], close:[2.25, 2.55] })}
-      </g>
-      <g${st(tr([[2.55, 'opacity:0'], [2.8, 'opacity:1']]))}>
-        <rect x="-700" y="100" width="1800" height="1000" fill="#1c1e23"/>
-        ${Array.from({ length: 22 }, (_, i) => `<path d="M${(i * 53) % 390} ${200 + (i * 97) % 560} l${8 + i % 9} ${-3 + i % 5}" stroke="#5a5e66" stroke-width=".8" opacity=".5"/>`).join('')}
-        <g style="transform-origin:center;animation:${tr([[2.55, 'transform:scale(.92)'], [3.6, 'transform:scale(1)']], 'ease-out')}">${lapTop({ x:195, y:500, s:1.45, sticker:2.95, label:3.15 })}</g>
-      </g>
+      ${lapFront({ x:195, y:612, s:1.18, screen:'staging', open:[1.45, 1.75], slip:[1.6, 2.1], prog:[1.85, 2.7], type:[2.85, 3.1], close:[3.25, 3.55] })}
     </g></g>`;
 
   // ---------- Szene 2: Autositz ----------
@@ -3143,7 +3143,7 @@ function buildIntro(D){
       ${sparks}
     </g></g>`;
 
-  const caps = [['1', 'Staging', .2, .4, 2.5, 2.7], ['2', 'Etikette drauf', 2.75, 2.95, 3.5, 3.7], ['3', 'Unterwegs zum Kunden', 3.85, 4.05, 5.25, 5.45], ['4', 'Beim Kunden aufklappen', 5.65, 5.85, 7.15, 7.35]]
+  const caps = [['1', 'Etikette drauf', .1, .3, 1.05, 1.25], ['2', 'Staging', 1.4, 1.6, 3.45, 3.65], ['3', 'Unterwegs zum Kunden', 3.85, 4.05, 5.25, 5.45], ['4', 'Beim Kunden aufklappen', 5.65, 5.85, 7.15, 7.35]]
     .map(([n, l, a, b, c, d]) => `<div class="in-cap"${st(op(a, b, c, d))}><i>${n}</i>${l}</div>`).join('');
 
   const spotA = st(tr([[7.6, 'opacity:1'], [8.0, 'opacity:0']])), blueA = st(tr([[7.7, 'opacity:0'], [8.0, 'opacity:1']]));
@@ -3157,7 +3157,7 @@ function buildIntro(D){
         <radialGradient id="inScr" cx=".5" cy=".55" r=".75"><stop offset="0" stop-color="#2a55e8"/><stop offset=".6" stop-color="#1433b0"/><stop offset="1" stop-color="#0a1d72"/></radialGradient>
         <radialGradient id="inHall" cx=".5" cy=".35" r=".7"><stop offset="0" stop-color="#e9eef4" stop-opacity=".55"/><stop offset="1" stop-color="#e9eef4" stop-opacity="0"/></radialGradient>
       </defs>
-      ${s1}${s3}${s4}
+      ${s0}${s1}${s3}${s4}
     </svg>
     <div class="in-bg in-blue"${blueA}></div>
     ${caps}
