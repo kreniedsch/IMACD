@@ -2328,7 +2328,7 @@ function inventoryRows(range){
   for(const t of state.tickets.filter(t => inRange(t) && visible(t)).sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start))){
     const base = { 'Datum': t.date.split('-').reverse().join('.'), 'Incident/WO': t.ticket || '', 'Auftrag': t.orderId || (t.free ? 'kostenlos' : ''),
       'Art': t.kind || '', 'Standort': t.address || '', 'Etage/Büro': t.room || '', 'Kontakt': t.contact || '',
-      'Erledigt': t.done ? 'Ja' : 'Nein' };
+      'Erledigt': t.done ? 'Ja' : 'Nein', 'Notiz': t.done ? noteText(t) : '' };
     const add = (status, code, desc, scanned, host) => {
       const isAsset = /^\d{8,12}$/.test(code), isHost = /^zrh[lehtw][a-z0-9]{3,5}$/i.test(code);
       rows.push({ ...base, 'Typ': deviceType(isHost ? code : host || code, desc), 'Status': status,
@@ -2364,8 +2364,8 @@ async function exportInventory(range, mode = 'save'){
   const rows = inventoryRows(range);
   if(!rows.length){ toast('Keine Geräte im gewählten Zeitraum'); return; }
   try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
-  const cols = ['Status','Asset-ID','Hostname','Typ','Beschreibung','Incident/WO','Auftrag','Standort','Etage/Büro','Datum','Art','Kontakt','Code (anderer)','Gescannt','Erledigt'];
-  const widths = [18,13,12,11,34,18,10,28,22,11,11,24,14,9,9];
+  const cols = ['Status','Asset-ID','Hostname','Typ','Beschreibung','Incident/WO','Auftrag','Standort','Etage/Büro','Datum','Art','Kontakt','Code (anderer)','Gescannt','Erledigt','Notiz'];
+  const widths = [18,13,12,11,34,18,10,28,22,11,11,24,14,9,9,40];
   // Alte Geräte (zu buchen) immer zuerst
   const rank = r => (/^Alt/.test(r.Status) ? 0 : 1);
   rows.sort((a,b) => rank(a) - rank(b) || a.Datum.split('.').reverse().join('').localeCompare(b.Datum.split('.').reverse().join('')) || (a.Typ < b.Typ ? -1 : a.Typ > b.Typ ? 1 : 0));
@@ -2380,6 +2380,16 @@ async function exportInventory(range, mode = 'save'){
   sheet('Host', rows.filter(r => r.Typ === 'Host'));
   sheet('Peripherie', rows.filter(r => r.Typ === 'Peripherie'));
   sheet('Alle', rows);
+  { // Ein Eintrag pro Ticket – mit Notiz zum Einfügen ins ITSM
+    const tcols = ['Datum','Zeit','Incident/WO','Auftrag','Art','Standort','Etage/Büro','Kontakt','Erledigt','Notiz'];
+    const T = state.tickets.filter(t => inRangeT(range)(t) && visible(t)).sort((x,y) => (x.date+(x.start||'')).localeCompare(y.date+(y.start||'')))
+      .map(t => ({ 'Datum': t.date.split('-').reverse().join('.'), 'Zeit': t.start || '', 'Incident/WO': t.ticket || '', 'Auftrag': t.orderId || (t.free ? 'kostenlos' : ''),
+        'Art': t.kind || '', 'Standort': t.address || '', 'Etage/Büro': t.room || '', 'Kontakt': t.contact || '', 'Erledigt': t.done ? 'Ja' : 'Nein', 'Notiz': t.done ? noteText(t) : '' }));
+    const ws = XLSX.utils.json_to_sheet(T, { header: tcols });
+    ws['!cols'] = [11,7,18,10,11,28,22,24,9,50].map(w => ({ wch:w }));
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:Math.max(T.length,1), c:tcols.length-1} }) };
+    XLSX.utils.book_append_sheet(wb, ws, 'Tickets');
+  }
   const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
   const label = range === 'day' ? view.date : range === 'week' ? 'KW-' + weekStart(iso(new Date())) : 'alle';
   const name = `imacd-inventar-${label}.xlsx`, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -2416,7 +2426,7 @@ function openExport(){
     ${(() => { const m = missingOld(state.tickets.filter(inRangeT(exportRange))).length; return m ? `<div class="group" style="margin-top:14px">${iconRow('warn','orange', `<b>${m} ohne Alt-Scan</b> – zuerst nachscannen`, 'openMissing', `data-v="${exportRange}"`)}</div>` : ''; })()}
     <button class="btn-fill" style="width:100%;margin-top:16px" data-act="xlsxMail">${ICON.mail}Per Mail senden</button>
     <button class="btn-tint" style="width:100%;margin-top:10px" data-act="xlsxSave">${ICON.download}In Dateien sichern</button>
-    <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Alt buchen</b>, <b>Host</b>, <b>Peripherie</b> und <b>Alle</b>. Alte Geräte stehen immer zuerst, mit Asset-ID und Hostname vorne – für die Inventarpflege.</div>
+    <div class="gfoot" style="margin:8px 4px 0">Excel mit den Blättern <b>Alt buchen</b>, <b>Host</b>, <b>Peripherie</b>, <b>Alle</b> und <b>Tickets</b> (mit Notiz). Alte Geräte stehen immer zuerst, mit Asset-ID und Hostname vorne – für die Inventarpflege.</div>
 `, 'export');
 }
 
