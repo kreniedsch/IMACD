@@ -1837,12 +1837,33 @@ function openPaste(){
     <div class="gfoot"><b>Tipp:</b> Ins Textfeld tippen und «Text scannen» wählen – das iPhone liest das Ticketblatt direkt mit der Kamera.</div>`, 'paste');
 }
 /* ---------- Notiz fürs Ticket (Standardsätze) ---------- */
+// Welches Gerät ist gemeint? Das zuerst genannte Gerät gewinnt – beim Austausch/Abbau zählt das alte Gerät.
+const DEV_WORDS = [
+  { re:/\bzrhl[a-z0-9]{3,5}\b|notebook|laptop|x360|elitebook|thinkpad|\bL1[3-6]\b|\bEB\b|\b(8[34]0|6[45]0|1030|1040)\s?G\d/i, w:'Notebook', art:'Das' },
+  { re:/monitor|bildschirm|display|\b[EP]2[2-7]\w*\b|\bT2[2-7]\w*\b/i, w:'Monitor', art:'Der' },
+  { re:/docking|\bdock\b|thunderbolt.?dock|usb-?c.?dock/i, w:'Dockingstation', art:'Die' },
+  { re:/desktop|elitedesk|thinkcentre|prodesk|\btiny\b|thin ?client|\bt6[34]0\b/i, w:'Computer', art:'Der' },
+  { re:/headset|jabra|poly\b|plantronics/i, w:'Headset', art:'Das' },
+  { re:/tastatur|keyboard/i, w:'Tastatur', art:'Die' },
+  { re:/\bmaus\b|mouse/i, w:'Maus', art:'Die' },
+  { re:/drucker|printer/i, w:'Drucker', art:'Der' },
+  { re:/telefon|handy|iphone|smartphone/i, w:'Telefon', art:'Das' }
+];
+// Gerätewort in einer gemerkten Vorlage durch Platzhalter ersetzen, damit die Vorlage für jedes Gerät passt
+const DEV_NAMES = 'Notebook|Laptop|Monitor|Bildschirm|Dockingstation|Docking|Dock|Computer|PC|Headset|Tastatur|Maus|Drucker|Telefon|Gerät|Arbeitsplatz';
+const normTpl = txt => String(txt)
+  .replace(new RegExp(`\\b(Das|Der|Die|das|der|die)\\s+(${DEV_NAMES})\\b`, 'g'), '{Art} {Gerät}')
+  .replace(new RegExp(`(?<!\\{)\\b(${DEV_NAMES})\\b(?!\\})`, 'g'), '{Gerät}');
 function devWord(t){
-  const d = [t.oldDevice, t.newDevice, t.title, t.material].filter(Boolean).join(' ');
-  if(/dock/i.test(d)) return { w:'Dockingstation', art:'Die' };
-  if(/monitor|bildschirm|display/i.test(d) && !NB_RE.test(t.oldDevice||'')) return { w:'Monitor', art:'Der' };
-  if(PC_RE.test(t.oldDevice || '') && !NB_RE.test(t.oldDevice || '')) return { w:'Computer', art:'Der' };
-  return { w:'Notebook', art:'Das' };
+  const k = (t.kind || t.title || '').toLowerCase(), oldFirst = /austausch|abbau|abholung|r(ü|ue)ck/.test(k);
+  const texts = oldFirst ? [t.oldDevice, t.title, t.newDevice, t.material] : [t.newDevice, t.material, t.title, t.oldDevice];
+  for(const txt of texts.filter(Boolean)){
+    const src = String(txt).replace(/^\s*(austausch|abbau|abholung|aufbau|lieferung|umzug)\s*:\s*/i, '');
+    let best = null;
+    for(const d of DEV_WORDS){ const m = src.match(d.re); if(m && (best === null || m.index < best.i)) best = { i:m.index, d }; }
+    if(best) return { w:best.d.w, art:best.d.art };
+  }
+  return { w:'Gerät', art:'Das' };
 }
 function noteKind(t){
   const k = ((t.kind || '') + ' ' + (t.kind ? '' : t.title || '')).toLowerCase();
@@ -1865,7 +1886,7 @@ const noteCanTest = k => k !== 'abbau' && k !== 'abholung';
 function noteDefault(t, test){
   const kind = noteKind(t), key = kind + '|' + (noteCanTest(kind) ? test : 'ohne');
   const { w, art } = noteSubject(t, kind), custom = (state.settings.noteTpl || {})[key];
-  if(custom) return custom.replace(/\{gerät\}/gi, w).replace(/\{art\}/gi, art);
+  if(custom) return normTpl(custom).replace(/\{gerät\}/gi, w).replace(/\{art\}/gi, art);
   const base = kind === 'andere' ? 'Der Auftrag wurde erledigt.' : `${art} ${w} wurde ${NOTE_VERB[kind]}.`;
   return test === 'mit' && noteCanTest(kind) ? base + ' Alles i.O.' : base;
 }
@@ -2733,7 +2754,7 @@ document.addEventListener('click', e => {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       const txt = ($('#cnText').value || '').trim(); if(!txt) break;
       const kind = noteKind(t), { w, art } = noteSubject(t, kind);
-      const tpl = txt.split(w).join('{Gerät}').split(art + ' {Gerät}').join('{Art} {Gerät}');
+      const tpl = normTpl(txt);
       state.settings.noteTpl = { ...(state.settings.noteTpl || {}), [kind + '|' + (noteCanTest(kind) ? (t.closeTest || 'mit') : 'ohne')]: tpl };
       save(); toast('Als Standard gemerkt'); break;
     }
