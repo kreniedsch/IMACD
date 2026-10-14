@@ -251,6 +251,9 @@ textarea.notes::placeholder{color:var(--label3)}
 #flash .fl-ico{font-size:96px;font-weight:800;line-height:1}
 #flash .fl-t{font-size:28px;font-weight:700}
 #flash .fl-s{font-size:17px;opacity:.95;max-width:340px}
+#flash .fl-acts{display:flex;flex-direction:column;gap:10px;margin-top:18px;width:min(300px,80vw)}
+#flash .fl-acts button{border:0;border-radius:14px;padding:14px;font:600 17px -apple-system,system-ui,sans-serif;background:rgba(255,255,255,.22);color:#fff}
+#flash .fl-acts button.pri{background:#fff;color:#1c1f27}
 #flash .fl-h{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 30px);font-size:14px;opacity:.8}
 .tl-gap.near{color:var(--green)}
 .tl-gap svg{flex:none}
@@ -1899,8 +1902,8 @@ function openMissing(range){
         <button class="callbtn" style="--green:var(--orange)" data-act="scanOld" data-id="${t.id}" aria-label="Alt scannen">${ICON.qr}</button>
       </div>`).join('') : '<div class="row"><span class="k" style="color:var(--green);font-weight:600">Alles gescannt ✓</span></div>'}</div>`, 'missing');
 }
-const needsOldScan = t => !!(t.oldDevice || /austausch|abbau|abholung|r(ü|ue)ckbau/i.test(t.kind || ''));
-const needsNewScan = t => !needsOldScan(t) && !!(t.newDevice || /lieferung|aufbau|install|rollout|umzug|z(ü|ue)gel|ausliefern/i.test(t.kind || ''));
+const needsOldScan = t => !!(t.oldDevice || /austausch|abbau|abholung|r(ü|ue)ckbau/i.test(t.kind || t.title || ''));
+const needsNewScan = t => !needsOldScan(t) && !!(t.newDevice || t.material || /lieferung|aufbau|install|rollout|umzug|z(ü|ue)gel|ausliefern/i.test(t.kind || t.title || ''));
 function toggleDone(id, force){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
   if(!t.done && !force && (needsOldScan(t) || needsNewScan(t))){ openFinish(id); return; }
@@ -1912,8 +1915,9 @@ function toggleDone(id, force){
 function openFinish(id){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
   const sc = t.scans || [];
-  const list = sc.map(x => `<div class="row"><span class="sq" style="--c:var(--${/^Alt/.test(x.what) ? 'orange' : /^Neu/.test(x.what) ? 'green' : 'indigo'})">${ICON.qr}</span>
-      <div class="k"><div class="fx1">${esc(x.code)}${x.host ? ' · ' + esc(x.host) : ''}</div><div class="fx2">${esc((x.what || 'gescannt') + (isSnScan(x) ? ' · Seriennr. – Asset-ID nachschlagen' : '') + (x.manual ? ' · von Hand' : ''))}</div></div></div>`).join('');
+  const list = sc.map((x, i) => `<div class="row"><span class="sq" style="--c:var(--${/^Alt/.test(x.what) ? 'orange' : /^Neu/.test(x.what) ? 'green' : 'indigo'})">${ICON.qr}</span>
+      <div class="k"><div class="fx1">${esc(x.code)}${x.host ? ' · ' + esc(x.host) : ''}</div><div class="fx2">${esc((x.what || 'gescannt') + (isSnScan(x) ? ' · Seriennr. – Asset-ID nachschlagen' : '') + (x.manual ? ' · von Hand' : '') + (x.check === 'ok' ? ' · ✓ geprüft' : x.check === 'falsch' ? ' · ✕ passt nicht' : ''))}</div></div>
+      <button class="callbtn" style="--green:var(--red)" data-act="delScanF" data-id="${t.id}" data-i="${i}" aria-label="Löschen">${ICON.trash}</button></div>`).join('');
   const oldCount = sc.filter(x => /^Alt/.test(x.what)).length, newCount = sc.filter(x => /^Neu/.test(x.what)).length, isOld = needsOldScan(t);
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Abschliessen</div><span></span></div>
@@ -2348,6 +2352,7 @@ async function openScanner(mode, id){
           if(hit){
             let frame = null;
             try{ frame = document.createElement('canvas'); frame.width = v.videoWidth; frame.height = v.videoHeight; frame.getContext('2d').drawImage(v, 0, 0); }catch(e){ frame = null; }
+            if(frame && hit.boundingBox) frame._bb = hit.boundingBox;
             $('.scan-frame').classList.add('hit'); setTimeout(() => { closeScanner(); handleScan(hit.rawValue.trim(), hit.format, frame); }, 180); return; }
         }
       }catch(e){}
@@ -2414,24 +2419,45 @@ function hostsInText(txt){
   });
   return out;
 }
+function cropAround(frame, bb){
+  // Ausschnitt um den QR-Code (Text steht meist daneben) – vergrössert für bessere Erkennung
+  const x0 = Math.max(0, bb.x - bb.width * 2.2), y0 = Math.max(0, bb.y - bb.height * .9);
+  const x1 = Math.min(frame.width, bb.x + bb.width * 5.5), y1 = Math.min(frame.height, bb.y + bb.height * 1.9);
+  const w = x1 - x0, h = y1 - y0; if(w < 40 || h < 20) return null;
+  const sc = Math.min(3, 1600 / w), c = document.createElement('canvas'); c.width = Math.round(w * sc); c.height = Math.round(h * sc);
+  c.getContext('2d').drawImage(frame, x0, y0, w, h, 0, 0, c.width, c.height); return c;
+}
 async function readHosts(frame){
   if(!frame) return [];
   const w = await getWorker();
-  const img = await prepImage(frame);
-  try{ await w.setParameters({ tessedit_pageseg_mode:'11' }); }catch(e){}
-  let txt = '';
-  try{ ({ data:{ text:txt } } = await w.recognize(img)); }catch(e){}
-  try{ await w.setParameters({ tessedit_pageseg_mode:'3' }); }catch(e){}
-  return hostsInText(txt);
+  const run = async src => { let txt = ''; try{ ({ data:{ text:txt } } = await w.recognize(await prepImage(src))); }catch(e){} return hostsInText(txt); };
+  try{ await w.setParameters({ tessedit_pageseg_mode:'11', tessedit_char_whitelist:'ZRHLTEWzrhltew0123456789ABCDEFGHIJKMNOPQSUVXYabcdfgijkmnopqsuvxy' }); }catch(e){}
+  let hosts = [];
+  try{
+    const crop = frame._bb ? cropAround(frame, frame._bb) : null;
+    if(crop) hosts = await run(crop);
+    if(!hosts.length) hosts = await run(frame);
+  } finally {
+    try{ await w.setParameters({ tessedit_pageseg_mode:'3', tessedit_char_whitelist:'' }); }catch(e){}
+  }
+  return hosts;
 }
-function flash(ok, title, sub){
+function flash(ok, title, sub, acts){
   let f = $('#flash');
-  if(!f){ f = document.createElement('div'); f.id = 'flash'; document.body.appendChild(f); f.addEventListener('click', () => f.classList.remove('show')); }
+  if(!f){ f = document.createElement('div'); f.id = 'flash'; document.body.appendChild(f);
+    f.addEventListener('click', e => { const b = e.target.closest('[data-fl]'); f.classList.remove('show'); clearTimeout(flash.t); if(b && flash.acts && flash.acts[+b.dataset.fl]) flash.acts[+b.dataset.fl].fn(); }); }
+  flash.acts = acts || null;
   f.className = ok === true ? 'ok' : ok === false ? 'bad' : 'unk';
-  f.innerHTML = `<div class="fl-ico">${ok === true ? '✓' : ok === false ? '✕' : '?'}</div><div class="fl-t">${esc(title)}</div>${sub ? `<div class="fl-s">${esc(sub)}</div>` : ''}<div class="fl-h">Tippen zum Schliessen</div>`;
+  f.innerHTML = `<div class="fl-ico">${ok === true ? '✓' : ok === false ? '✕' : '?'}</div><div class="fl-t">${esc(title)}</div>${sub ? `<div class="fl-s">${esc(sub)}</div>` : ''}`
+    + (acts ? `<div class="fl-acts">${acts.map((a, i) => `<button data-fl="${i}" class="${i ? '' : 'pri'}">${esc(a.label)}</button>`).join('')}</div>` : `<div class="fl-h">Tippen zum Schliessen</div>`);
   requestAnimationFrame(() => f.classList.add('show'));
   try{ navigator.vibrate && navigator.vibrate(ok === false ? [80,60,80] : 40); }catch(e){}
-  clearTimeout(flash.t); flash.t = setTimeout(() => f.classList.remove('show'), ok === false ? 6000 : 2600);
+  clearTimeout(flash.t); if(!acts) flash.t = setTimeout(() => f.classList.remove('show'), ok === false ? 6000 : 2600);
+}
+// Nach unsicherem Scan: «Nochmal scannen» ersetzt den eben gespeicherten Eintrag
+function retryActs(t, mode, code){
+  return [{ label:'Nochmal scannen', fn: () => { t.scans = (t.scans || []).filter(x => normCode(x.code) !== normCode(code)); save(); openScanner(mode, t.id); } },
+          { label:'So lassen', fn: () => {} }];
 }
 // Prüft eine gescannte Asset-Nr. über den Hostnamen auf dem Etikett
 async function hostCheck(code, frame, expected){
@@ -2460,7 +2486,7 @@ async function handleScanAsync(code, format, frame){
     const t = state.tickets.find(x => x.id === scan.id); if(!t) return;
     const mode = scan.mode, label = mode === 'old' ? 'Altes Gerät' : 'Neues Gerät';
     let m = codeMatches(t, code), host = '';
-    if((t.scans || []).some(x => normCode(x.code) === normCode(code))){ toast('Dieser Code ist schon gespeichert'); openFinish(t.id); return; }
+    t.scans = (t.scans || []).filter(x => normCode(x.code) !== normCode(code));   // nochmals gescannt → neu prüfen
     const exp = hostsOf(mode === 'old' ? t.oldDevice : t.newDevice);
     if(!m && sn){
       (t.scans ||= []).push({ code: sn, sn, what: label + (mode === 'old' ? '' : ' (Seriennr.)'), at: new Date().toISOString() });
@@ -2471,10 +2497,10 @@ async function handleScanAsync(code, format, frame){
     if(!m && exp.length && isAssetCode(code)){
       const r = await hostCheck(code, frame, exp);
       if(r && r.match){ m = label; host = r.match; flash(true, `${r.match} stimmt`, `${label} · Asset ${code}`); }
-      else if(r && r.hosts.length){ host = r.hosts[0]; flash(false, 'Falsches Gerät?', `Etikett: ${r.hosts.join(', ')} · Ticket: ${exp.join(', ')}`); }
-      else flash(null, 'Hostname nicht lesbar', 'Asset gespeichert – Hostname bitte selbst prüfen');
+      else if(r && r.hosts.length){ host = r.hosts[0]; flash(false, 'Falsches Gerät?', `Etikett: ${r.hosts.join(', ')} · Ticket: ${exp.join(', ')}`, retryActs(t, mode, code)); }
+      else flash(null, 'Hostname nicht lesbar', `Asset ${code} gespeichert. Etikett gerade, nah und hell halten.`, retryActs(t, mode, code));
     } else if(m === label) flash(true, `${label} stimmt`, code);
-    else if(isAssetCode(code)) flash(null, 'Gespeichert – nicht geprüft', exp.length ? `Asset ${code}` : `Asset ${code} · im Ticket steht kein Hostname zum Vergleichen`);
+    else if(isAssetCode(code)) flash(null, 'Gespeichert – nicht geprüft', `Asset ${code} · im Ticket steht kein Hostname zum Vergleichen`);
     else flash(null, 'Gespeichert', code);
     (t.scans ||= []).push({ code, host, what: m === label ? label : label + ' (gescannt)', check: m === label ? 'ok' : host ? 'falsch' : '', at: new Date().toISOString() });
     save(); openFinish(t.id);
@@ -2488,11 +2514,12 @@ async function handleScanAsync(code, format, frame){
       if(nh.length || oh.length){
         const r = await hostCheck(code, frame, [...nh, ...oh]);
         if(r && r.match){ host = r.match; what = nh.includes(r.match) ? 'Neues Gerät' : 'Altes Gerät'; }
-        else if(r && r.hosts.length){ host = r.hosts[0]; readInfo = `Etikett: ${r.hosts.join(', ')} – passt nicht zum Ticket (${[...nh, ...oh].join(', ')})`; flash(false, 'Falsches Gerät?', readInfo); }
-        else { readInfo = 'Hostname auf dem Etikett nicht lesbar.'; flash(null, 'Hostname nicht lesbar', 'Bitte Etikett gerade und hell halten oder den Hostnamen selbst prüfen'); }
+        else if(r && r.hosts.length){ host = r.hosts[0]; readInfo = `Etikett: ${r.hosts.join(', ')} – passt nicht zum Ticket (${[...nh, ...oh].join(', ')})`; flash(false, 'Falsches Gerät?', readInfo, [{ label:'Nochmal scannen', fn: () => openScanner('ticket', t.id) }, { label:'Weiter', fn: () => {} }]); }
+        else { readInfo = 'Hostname auf dem Etikett nicht lesbar.'; flash(null, 'Hostname nicht lesbar', 'Etikett gerade, nah und hell halten.', [{ label:'Nochmal scannen', fn: () => openScanner('ticket', t.id) }, { label:'Selbst zuordnen', fn: () => {} }]); }
       } else { readInfo = 'Im Ticket steht kein Hostname zum Vergleichen.'; flash(null, 'Nicht geprüft', `Asset ${code} · im Ticket steht kein Hostname zum Vergleichen`); }
     }
     if(what){
+      t.scans = (t.scans || []).filter(x => normCode(x.code) !== normCode(code));
       (t.scans ||= []).push({ code, host, what, check:'ok', at: new Date().toISOString() });
       save(); openDetail(t.id);
       flash(true, what === 'Neues Gerät' || what === 'Altes Gerät' ? `${what} stimmt` : `Passt zu: ${what}`, host ? `${host} · Asset ${code}` : code);
@@ -2741,6 +2768,7 @@ document.addEventListener('click', e => {
       (t.scans ||= []).push({ code: b.dataset.v, host: b.dataset.h || '', sn: snOf(b.dataset.v) && !isAssetCode(b.dataset.v) ? snOf(b.dataset.v) : '', what: b.dataset.w ? b.dataset.w + ' (zugeordnet)' : '', at: new Date().toISOString() });
       save(); openDetail(id); toast(b.dataset.w ? `${b.dataset.w}: ${b.dataset.v} gespeichert` : 'Gespeichert'); break;
     }
+    case 'delScanF': { const t = state.tickets.find(x => x.id === id); if(t && t.scans){ t.scans.splice(+b.dataset.i, 1); save(); openFinish(id); } break; }
     case 'delScan': { const t = state.tickets.find(x => x.id === id); if(t && t.scans){ t.scans.splice(+b.dataset.i, 1); save(); openDetail(id); } break; }
     case 'pickDay': view.date = b.dataset.d; renderPlan(); break;
     case 'weekPrev': view.date = addDays(view.date,-7); renderPlan(); break;
