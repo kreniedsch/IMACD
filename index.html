@@ -364,6 +364,43 @@ nav.tabs button.on{color:var(--blue)}
 /* Hinweis-Toast */
 .toast{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translate(-50%,-24px);opacity:0;transition:opacity .25s,transform .3s cubic-bezier(.2,.85,.25,1);background:var(--bar);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);color:var(--label);padding:11px 18px;border-radius:18px;font-size:15px;font-weight:500;line-height:1.3;box-shadow:0 8px 30px rgba(0,0,0,.16);z-index:70;width:max-content;max-width:min(340px,92vw);text-align:center;pointer-events:none}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+/* HWLC & Umzug */
+.cnt{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0 0}
+.cnt .card{margin:0;padding:12px 14px}
+.cnt small{color:var(--label2);font-size:13px}
+.cnt b{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.cnt .of{color:var(--label2);font-size:15px;font-weight:600}
+.meter{height:7px;border-radius:4px;background:var(--fill);overflow:hidden;margin-top:6px}
+.meter>i{display:block;height:100%;background:var(--blue);border-radius:4px;transition:width .3s}
+.meter.done>i{background:var(--green)}
+.hw-head{margin-bottom:0}
+.hw-key{font-size:20px;font-weight:700;letter-spacing:-.01em;word-break:break-all}
+.hw-sub{color:var(--label2);font-size:15px;margin-top:4px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.hw-sub svg{width:15px;height:15px;color:var(--green)}
+.hw-sub a{color:var(--blue);text-decoration:none}
+.info-box{background:color-mix(in srgb,var(--orange) 16%,transparent);border-radius:12px;padding:12px 14px;font-size:15px;line-height:1.45;white-space:pre-wrap}
+.tbl .row{min-height:40px;padding:7px 10px 7px 16px;gap:8px}
+.tbl .n{width:24px;color:var(--label2);font-variant-numeric:tabular-nums;font-size:14px;flex:none}
+.tbl .code{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbl .tbl-h{background:var(--fill)}
+.xbtn{border:0;background:none;color:var(--label3);width:32px;height:32px;display:grid;place-items:center;padding:0;flex:none}
+.xbtn.blue{color:var(--blue)}
+.xbtn svg{width:17px;height:17px}
+.badge{font-size:12px;font-weight:600;border-radius:6px;padding:2px 7px;background:var(--fill);color:var(--label2);white-space:nowrap;flex:none;display:inline-flex;align-items:center;gap:3px}
+.badge.green{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
+.badge.orange{background:color-mix(in srgb,var(--orange) 18%,transparent);color:var(--orange)}
+.pchips{display:flex;flex-wrap:wrap;gap:8px}
+.pchips .chip svg{width:14px;height:14px}
+.att-ic{width:22px;height:22px;color:var(--blue);flex:none;display:grid;place-items:center}
+.att-ic svg{width:20px;height:20px}
+.att-view{width:100%;height:68vh;border:0;border-radius:12px;background:#fff;margin-top:8px}
+.scan-msg{position:absolute;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom) + 96px);padding:12px 14px;border-radius:14px;text-align:center;font-weight:700;font-size:18px;background:rgba(60,60,67,.8);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);z-index:2}
+.scan-msg.ok{background:rgba(48,209,88,.95);color:#04210c}
+.scan-msg.bad{background:rgba(255,69,58,.95);color:#fff}
+.scan-msg.unk{background:rgba(255,159,10,.95);color:#2a1600}
+.scan-msg small{display:block;font-weight:500;font-size:14px;margin-top:3px}
+.scan-msg .acts{display:flex;gap:8px;margin-top:10px}
+.scan-msg .acts button{flex:1;border:0;border-radius:10px;padding:11px 6px;font-size:15px;font-weight:700;background:#fff;color:#000}
 </style>
 </head>
 <body>
@@ -410,11 +447,15 @@ nav.tabs button.on{color:var(--blue)}
     <div class="gfoot" id="scanFoot" style="margin-top:24px;text-align:center"></div>
   </section>
 
+  <section id="tab-hwlc" hidden></section>
+  <section id="tab-move" hidden></section>
   <section id="tab-data" hidden></section>
 </main>
 
 <nav class="tabs">
   <button data-tab="plan" class="on"><span data-icon="calendar"></span>Tagesplan</button>
+  <button data-tab="hwlc"><span data-icon="box"></span>HWLC</button>
+  <button data-tab="move"><span data-icon="move"></span>Umzug</button>
   <button data-tab="scan"><span data-icon="scan"></span>Erfassen<span class="tdot" id="pendDot" hidden></span></button>
   <button data-tab="data"><span data-icon="sliders"></span>Einstellungen</button>
 </nav>
@@ -429,6 +470,7 @@ nav.tabs button.on{color:var(--blue)}
     <div class="scan-title" id="scanTitle">Code scannen</div>
     <button class="scan-btn" data-act="scanTorch" id="torchBtn" aria-label="Licht" data-icon="bolt" hidden></button>
   </div>
+  <div class="scan-msg" id="scanMsg" hidden></div>
   <div class="scan-hint" id="scanHint">QR-Code oder Barcode in den Rahmen halten</div>
 </div>
 
@@ -1017,6 +1059,8 @@ const ICON = {
   close: SV('<path d="M6 6l12 12M18 6L6 18"/>', 2.5),
   bolt: SF('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
   walk: SF('<circle cx="13.5" cy="4" r="2"/><path d="M10.2 8.2 7 9.8V14h2v-3l1.3-.6-1.6 8.1L5 17.7l-.4 2 6 1.2 1.1-5.3 2.3 2.2V24h2v-7.2l-2.4-2.3.7-3.3A6.6 6.6 0 0 0 19 14v-2a4.6 4.6 0 0 1-3.9-2.2l-1-1.6a2.2 2.2 0 0 0-2.7-.8z"/>'),
+  box: SV('<path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/>'),
+  move: SV('<path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/>'),
   paste: SV('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V2.8h6V4M9 11h6M9 15h4"/>')
 };
 
@@ -1035,9 +1079,9 @@ function load(){
     }
     if(s && s.settings && !s.settings.v2){ if(+s.settings.travel === 20) s.settings.travel = 10; s.settings.v2 = true; }
     if(s && Array.isArray(s.tickets)){ s.tickets = s.tickets.filter(t => t.group !== 'Post'); if(s.settings && s.settings.view === 'Post') s.settings.view = 'all'; }
-    if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null };
+    if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null, hwlc:s.hwlc||{}, moves:s.moves||[] };
   }catch(e){}
-  return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null };
+  return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null, hwlc:{}, moves:[] };
 }
 function save(){
   try{ localStorage.setItem(STORE, JSON.stringify(state)); }
@@ -1652,13 +1696,15 @@ function renderData(){
     </div></div></div>`;
 }
 
-function renderAll(){ renderPlan(); renderScan(); if(view.tab === 'data') renderData(); }
+function renderAll(){ renderPlan(); renderScan(); if(view.tab === 'data') renderData(); if(view.tab === 'hwlc') renderHwlc(); if(view.tab === 'move') renderMove(); }
 
 function setTab(tab){
   view.tab = tab;
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  ['plan','scan','data'].forEach(t => $('#tab-'+t).hidden = t !== tab);
+  ['plan','hwlc','move','scan','data'].forEach(t => $('#tab-'+t).hidden = t !== tab);
   if(tab === 'plan') renderPlan();
+  if(tab === 'hwlc') renderHwlc();
+  if(tab === 'move') renderMove();
   if(tab === 'scan') $('#scanDate').value = view.date;
   renderScan();
   if(tab === 'data') renderData();
@@ -1715,6 +1761,7 @@ function openDetail(id){
     ${t.techInfo ? `<div class="techinfo big">${ICON.warn}<span><b>Info an Techniker</b><br>${esc(t.techInfo)}</span></div>` : ''}
     ${W.length?`<div class="warn" style="margin:0 0 16px">${ICON.warn}<div>${W.map(esc).join('<br>')}</div></div>`:''}
     <div class="group">${info.map(r => `<div class="row stack"><div class="k">${r[0]}</div><div class="v">${r[2]?`<a href="${esc(r[2])}">${esc(r[1])}</a>`:esc(r[1]).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>
+    ${attachHtml(t)}
     ${(() => { const p = packList(t);
       const hostSwap = (t.kind || '').toLowerCase() === 'austausch' && (/^zrh[let]/i.test(t.oldDevice || '') || NB_RE.test(t.oldDevice || '') || PC_RE.test(t.oldDevice || ''));
       const oldB0 = brandOf((t.oldDevice || '').replace(/\(durch.*$/i,''));
@@ -2237,14 +2284,17 @@ async function processBatch(files){
         }catch(err){ console.error(err); toast('KI: '+errMsg(err)+' – lokale Erkennung wird verwendet'); await new Promise(r => setTimeout(r, 1200)); }
       }
       if(f.type === 'text/calendar' || /\.ics$/i.test(f.name)){
-        const ts = icsToBlocks(await f.text()).filter(b => b.replace(/\s/g,'').length >= 15).map(b => parseBlock(b, date)).filter(t => t.group !== 'Post');   // Post-Versand wird nicht gebraucht
+        const icsTxt = await f.text();
+        const ts = icsToBlocks(icsTxt).filter(b => b.replace(/\s/g,'').length >= 15).map(b => parseBlock(b, date)).filter(t => t.group !== 'Post');   // Post-Versand wird nicht gebraucht
         const cnt = {}; let firstDate = null;
         for(const t of ts){ state.pending.push(t); acceptOne(t.id); cnt[t.group || 'Andere'] = (cnt[t.group || 'Andere'] || 0) + 1; firstDate ||= t.date; }
         save();
+        let hwN = [], attN = 0;
+        try{ hwN = hwlcImport(icsTxt); attN = await icsAttachments(icsTxt); }catch(err){ console.error(err); }
         if(ts.length){
           if(firstDate) view.date = firstDate;
           const mine = viewGroup() !== 'all' && cnt[viewGroup()] != null ? ` · ${viewGroup()}: ${cnt[viewGroup()]}` : '';
-          setTimeout(() => { setTab('plan'); toast(`${ts.length} Termine übernommen${mine}`); }, 50);
+          setTimeout(() => { setTab('plan'); toast(`${ts.length} Termine übernommen${mine}${hwN.length ? ' · HWLC ' + hwN.map(k => k.replace(/^HWLC_/, '')).join(', ') : ''}${attN ? ' · ' + attN + ' Anhänge' : ''}`); }, 50);
           icsDone = true;
         }
       } else if(f.type === 'application/pdf' || /\.pdf$/i.test(f.name)){
@@ -2278,7 +2328,9 @@ async function deliver(name, content, mime, preferShare){
 }
 async function backup(){
   const { aiKey, gemKey, ...safeSettings } = state.settings;
-  const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending };
+  const files = {};
+  try{ for(const k of await IDB.keys()){ const r = await IDB.get(k); if(r && (r.blob || r.data)) files[k] = { name:r.name, type:r.type || '', b64: await bytesToB64(r.blob || new Blob([r.data])), tpl: !!r.data }; } }catch(e){ console.error(e); }
+  const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending, hwlc:state.hwlc || {}, moves:state.moves || [], files };
   const ok = await deliver(`imacd-backup-${iso(new Date())}.json`, JSON.stringify(data, null, 1), 'application/json', true);
   if(ok){ state.lastBackup = new Date().toISOString(); save(); renderAll(); toast('Backup erstellt'); }
 }
@@ -2291,6 +2343,9 @@ async function importBackup(file){
     state.tickets = [...byId.values()];
     if(Array.isArray(d.pending)){ const ids = new Set(state.pending.map(p=>p.id)); d.pending.forEach(p => { if(!ids.has(p.id)) state.pending.push(p); }); }
     if(d.settings) state.settings = { ...DEFAULTS, ...d.settings, aiKey: state.settings.aiKey, gemKey: state.settings.gemKey };
+    if(d.hwlc && typeof d.hwlc === 'object') state.hwlc = { ...(state.hwlc || {}), ...d.hwlc };
+    if(Array.isArray(d.moves)){ const ids = new Set((state.moves || []).map(m => m.id)); state.moves = [...(state.moves || []).map(m => d.moves.find(x => x.id === m.id) || m), ...d.moves.filter(m => !ids.has(m.id))]; }
+    if(d.files && typeof d.files === 'object') for(const [k, f] of Object.entries(d.files)){ try{ const bytes = b64ToBytes(f.b64); await IDB.put(k, f.tpl ? { name:f.name, data:bytes.buffer, at:new Date().toISOString() } : { name:f.name, type:f.type, blob:new Blob([bytes], { type:f.type }) }); }catch(e){ console.error(e); } }
     save(); renderAll(); toast(`${d.tickets.length} Tickets importiert`);
   }catch(e){ toast('Import fehlgeschlagen: '+e.message); }
 }
@@ -2352,8 +2407,10 @@ async function getDetector(){
 async function openScanner(mode, id){
   scan.mode = mode; scan.id = id || null;
   const t = id && state.tickets.find(x => x.id === id);
+  scan.paused = false; scan.ask = null; scan.last = ''; $('#scanMsg').hidden = true;
   $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : 'Code scannen';
-  $('#scanHint').textContent = mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
+  if(CONT_MODES.has(mode)) setTimeout(contTitle, 0);
+  $('#scanHint').textContent = CONT_MODES.has(mode) ? 'Ein Etikett nach dem anderen scannen – mit ✕ beenden' : mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
   $('#scanner').hidden = false; document.body.style.overflow = 'hidden';
   try{
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Kamera nicht verfügbar (App in Safari über GitHub Pages öffnen)');
@@ -2366,11 +2423,20 @@ async function openScanner(mode, id){
     $('#scanHint').textContent = $('#scanHint').textContent.replace(/ …$/,'');
     const loop = async () => {
       if($('#scanner').hidden) return;
+      if(scan.paused){ scan.timer = setTimeout(loop, 200); return; }
       try{
         if(v.readyState >= 2){
           const res = await det.detect(v);
           const hit = res.find(r => r.rawValue && r.rawValue.trim());
-          if(hit){
+          if(hit && CONT_MODES.has(scan.mode)){
+            const code = hit.rawValue.trim(), now = Date.now();
+            if(!(code === scan.last && now - scan.lastAt < 2500)){
+              scan.last = code; scan.lastAt = now;
+              $('.scan-frame').classList.add('hit'); setTimeout(() => $('.scan-frame').classList.remove('hit'), 350);
+              contShow(contScan(code));
+              scan.timer = setTimeout(loop, 800); return;
+            }
+          } else if(hit){
             let frame = null;
             try{ frame = document.createElement('canvas'); frame.width = v.videoWidth; frame.height = v.videoHeight; frame.getContext('2d').drawImage(v, 0, 0); }catch(e){ frame = null; }
             if(frame && hit.boundingBox) frame._bb = hit.boundingBox;
@@ -2390,8 +2456,9 @@ function closeScanner(){
   if(scan.stream) scan.stream.getTracks().forEach(t => t.stop());
   scan.stream = null; scan.torch = false; $('#torchBtn').classList.remove('on');
   $('#scanVideo').srcObject = null; $('.scan-frame').classList.remove('hit');
-  $('#scanner').hidden = true;
+  $('#scanner').hidden = true; $('#scanMsg').hidden = true; scan.paused = false;
   if(!$('#sheetWrap').classList.contains('open')) document.body.style.overflow = '';
+  if(CONT_MODES.has(scan.mode)){ if(view.tab === 'hwlc') renderHwlc(); if(view.tab === 'move') renderMove(); }
 }
 async function toggleTorch(){
   const track = scan.stream && scan.stream.getVideoTracks()[0]; if(!track) return;
@@ -2881,6 +2948,97 @@ document.addEventListener('click', e => {
       break;
     }
     case 'closeSheet': closeSheet(); break;
+    /* --- Anhänge --- */
+    case 'openAtt': openAttachment(id, b.dataset.i); break;
+    case 'shareAtt': shareAttachment(id, b.dataset.i); break;
+    case 'openDetailBack': openDetail(id); break;
+    /* --- Dauer-Scan --- */
+    case 'scanAsk': {
+      const fn = scan.ask && scan.ask[+b.dataset.i]; scan.ask = null; scan.paused = false;
+      const r = fn ? fn[1]() : null; if(r) contShow(r); else $('#scanMsg').hidden = true;
+      scan.last = ''; break;
+    }
+    /* --- HWLC --- */
+    case 'hwlcPick': state.settings.hwlcKey = b.dataset.k; state.settings.hwlcSheet = ''; save(); renderHwlc(); break;
+    case 'hwlcMode': state.settings.hwlcMode = b.dataset.v; save(); renderHwlc(); break;
+    case 'hwlcSheet': state.settings.hwlcSheet = b.dataset.v; save(); renderHwlc(); break;
+    case 'hwlcScan': if(!hwlcCur()){ toast('Zuerst Kalender importieren oder Tranche anlegen'); break; } openScanner('hwlc'); break;
+    case 'hwlcManual': hwlcManualSheet('hwlc'); break;
+    case 'hwlcManAdd': case 'moveManAdd': {
+      const i = $('#manCode'), v = i ? i.value.trim() : ''; if(!v) break;
+      const r = b.dataset.act === 'hwlcManAdd' ? hwlcAdd(v) : moveAdd(v);
+      if(r.ask){ showSheet(`<div class="grabber"></div><div class="sh-nav"><span></span><div class="sh-title">${esc(r.title)}</div><span></span></div><div class="gfoot" style="text-align:center;margin:6px 0 12px">${esc(r.sub || '')}</div><div class="group">${r.ask.map(([l], k) => `<div class="row tap" data-act="manAsk" data-i="${k}" data-m="${b.dataset.act === 'hwlcManAdd' ? 'hwlc' : 'move'}"><span class="k blue">${esc(l)}</span></div>`).join('')}</div>`, 'manask'); manAskFns = r.ask; break; }
+      const m = $('#manMsg'); if(m){ m.innerHTML = `<b style="color:var(--${r.ok === true ? 'green' : r.ok === false ? 'red' : 'orange'})">${esc(r.title)}</b>${r.sub ? ' · ' + esc(r.sub) : ''}`; }
+      if(r.ok) { i.value = ''; i.focus(); }
+      view.tab === 'hwlc' ? renderHwlc() : renderMove(); break;
+    }
+    case 'manAsk': { const fn = manAskFns && manAskFns[+b.dataset.i]; const r = fn ? fn[1]() : null; manAskFns = null; hwlcManualSheet(b.dataset.m); if(r) setTimeout(() => { const m = $('#manMsg'); if(m) m.innerHTML = `<b>${esc(r.title)}</b>${r.sub ? ' · ' + esc(r.sub) : ''}`; }, 50); view.tab === 'hwlc' ? renderHwlc() : renderMove(); break; }
+    case 'hwlcDel': { const h = hwlcCur(); if(h){ h.items = (h.items || []).filter(x => x.code !== b.dataset.v); save(); renderHwlc(); toast('Gelöscht'); } break; }
+    case 'hwlcExcel': hwlcExcel(b.dataset.v); break;
+    case 'hwlcNew': hwlcNewSheet(); break;
+    case 'hwlcNewSave': {
+      const da = ($('#hwDa').value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, ''), d = $('#hwDate').value;
+      if(!da || !d){ toast('Dienstabteilung und Datum eintragen'); break; }
+      const key = `HWLC_${da}_${d.slice(2, 4)}.${d.slice(5, 7)}.${d.slice(8, 10)}`;
+      const mon = $('#hwMon').value.trim(), host = $('#hwHost').value.trim();
+      state.hwlc ||= {};
+      state.hwlc[key] = { ...(state.hwlc[key] || {}), key, da, extra:'', date:d, time:'', title:key, ort:'', kontakt:'', spez:'', rows:[], notes:[], places:[],
+        soll:{ mon: mon ? +mon : null, host: host ? +host : null, lief:0 }, items:(state.hwlc[key] || {}).items || [] };
+      state.settings.hwlcKey = key; save(); closeSheet(); renderHwlc(); break;
+    }
+    case 'hwlcDelTranche': {
+      const h = hwlcCur(); if(!h) break;
+      if(!confirm(`${h.key} mit ${(h.items || []).length} Geräten löschen?`)) break;
+      delete state.hwlc[h.key]; state.settings.hwlcKey = ''; save(); renderHwlc(); break;
+    }
+    /* --- Umzug --- */
+    case 'moveNew': moveNewSheet(); break;
+    case 'moveNewSave': {
+      const n = ($('#mvName').value || '').trim(), d = $('#mvDate').value || view.date;
+      if(!n){ toast('Namen eintragen'); break; }
+      const m = { id:uid(), name:n, date:d, items:[], cur:{ mode:'ab', room:'', table:'', lager:'', troom:'', ttable:'' } };
+      (state.moves ||= []).push(m); state.settings.moveId = m.id; save(); closeSheet(); renderMove(); break;
+    }
+    case 'movePick': state.settings.moveId = b.dataset.v; save(); renderMove(); break;
+    case 'moveMode': { const m = moveCur(); if(m){ m.cur.mode = b.dataset.v; save(); renderMove(); } break; }
+    case 'moveNextTable': {
+      const m = moveCur(); if(!m) break;
+      const k = m.cur.mode === 'auf' ? 'ttable' : 'table', v = String(m.cur[k] || '');
+      const mm = v.match(/^(.*?)(\d+)(\D*)$/); m.cur[k] = mm ? mm[1] + (+mm[2] + 1) + mm[3] : (v ? v + '1' : '1');
+      save(); renderMove(); toast('Tisch ' + m.cur[k]); break;
+    }
+    case 'moveScan': {
+      const m = moveCur(); if(!m) break;
+      if(m.cur.mode === 'auf' ? !m.cur.troom : !m.cur.room){ toast(m.cur.mode === 'auf' ? 'Zuerst Zielraum eintragen' : 'Zuerst Raum eintragen'); const f = $(m.cur.mode === 'auf' ? '#mvTroom' : '#mvRoom'); f && f.focus(); break; }
+      openScanner('move'); break;
+    }
+    case 'moveManual': hwlcManualSheet('move'); break;
+    case 'movePeri': { const r = moveAdd('', 'Peripherie', b.dataset.v); toast(r.ok ? `${b.dataset.v} · ${r.sub}` : r.title); renderMove(); break; }
+    case 'movePeriOwn': { const v = prompt('Zubehör (z. B. Dockingkabel, Telefon):'); if(v && v.trim()){ const r = moveAdd('', 'Peripherie', v.trim()); toast(r.ok ? `${v.trim()} · ${r.sub}` : r.title); renderMove(); } break; }
+    case 'moveDel': { const m = moveCur(); if(m){ m.items = m.items.filter(x => x.id !== b.dataset.v); save(); renderMove(); } break; }
+    case 'moveCopy': {
+      const m = moveCur(); if(!m) break;
+      const r = b.dataset.r, tb = b.dataset.t;
+      const codes = m.items.filter(x => x.code && (x.room || '–') === r && (tb === '*' || (x.table || '') === tb)).map(x => x.code);
+      if(!codes.length){ toast('Keine Asset-IDs'); break; }
+      const txt = codes.join('\n');
+      (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast(`${codes.length} Asset-IDs kopiert`)).catch(() => { prompt('Asset-IDs:', codes.join(' ')); });
+      if(sheetMode === 'mvroom') closeSheet(); break;
+    }
+    case 'moveRoomActs': moveRoomActs(b.dataset.r); break;
+    case 'moveToLager': {
+      const m = moveCur(); if(!m) break;
+      if(!m.cur.lager){ toast('Zuerst im Abbau «Zwischenlager» eintragen'); break; }
+      let n = 0; m.items.forEach(x => { if((x.room || '–') === b.dataset.r && x.status !== 'auf'){ x.lager = m.cur.lager; x.status = 'lager'; n++; } });
+      save(); closeSheet(); renderMove(); toast(`${n} Geräte → Lager ${m.cur.lager}`); break;
+    }
+    case 'moveSetRoom': { const m = moveCur(); if(m){ m.cur.mode = 'ab'; m.cur.room = b.dataset.r === '–' ? '' : b.dataset.r; save(); closeSheet(); renderMove(); } break; }
+    case 'moveExcel': moveExcel(b.dataset.v); break;
+    case 'moveDelJob': {
+      const m = moveCur(); if(!m) break;
+      if(!confirm(`Umzug «${m.name}» mit ${m.items.length} Geräten löschen?`)) break;
+      state.moves = state.moves.filter(x => x.id !== m.id); state.settings.moveId = ''; save(); renderMove(); break;
+    }
     case 'saveEdit': saveEdit(); break;
     case 'deleteEdit': deleteEdit(); break;
     case 'backup': backup(); break;
@@ -2900,8 +3058,29 @@ document.addEventListener('click', e => {
   }
 });
 
+let manAskFns = null;
+document.addEventListener('input', e => {
+  const k = e.target.dataset && e.target.dataset.mv; if(!k) return;
+  const m = moveCur(); if(!m) return;
+  m.cur[k] = e.target.value.trim(); save();
+});
 document.addEventListener('change', e => {
   const id = e.target.id;
+  if(id === 'hwlcTpl' && e.target.files[0]){
+    const f = e.target.files[0]; e.target.value = '';
+    (async () => {
+      try{
+        const buf = await f.arrayBuffer();
+        await loadScript(JSZIP_URL);
+        const zip = await JSZip.loadAsync(buf), wb = await zip.file('xl/workbook.xml').async('string');
+        const miss = HWLC_SHEETS.filter(n => !wb.includes('name="' + n + '"'));
+        if(miss.length) throw new Error('Blätter fehlen: ' + miss.join(', '));
+        await IDB.put('hwlc-template', { name:f.name, data:buf, at:new Date().toISOString() });
+        toast('Vorlage gespeichert'); renderHwlc();
+      }catch(err){ toast('Vorlage ungültig: ' + errMsg(err)); }
+    })();
+    return;
+  }
   if(id === 'inCam' || id === 'inFiles' || id === 'inCam2'){
     const p = handleFiles(e.target.files); e.target.value = '';
     p && p.then(() => { if(state.pending.length) $('#pendingList').scrollIntoView({ behavior:'smooth', block:'start' }); });
@@ -2967,6 +3146,565 @@ document.addEventListener('visibilitychange', () => { if(!document.hidden){ if(v
 
 
 document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = ICON[el.dataset.icon] || '');
+
+/* ===================== ABLAGE (IndexedDB): Anhänge & HWLC-Vorlage ===================== */
+const IDB = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('imacd.files', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('f');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }));
+  const run = async (mode, fn) => { const db = await open(); return new Promise((res, rej) => {
+    const tx = db.transaction('f', mode), rq = fn(tx.objectStore('f'));
+    tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+  }); };
+  return { get: k => run('readonly', s => s.get(k)), put: (k, v) => run('readwrite', s => s.put(v, k)), del: k => run('readwrite', s => s.delete(k)), keys: () => run('readonly', s => s.getAllKeys()) };
+})();
+const fmtSize = n => n >= 1048576 ? (n / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+const b64ToBytes = b64 => { const s = atob(String(b64).replace(/\s+/g, '')); const u = new Uint8Array(s.length); for(let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; };
+const bytesToB64 = async blob => { const u = new Uint8Array(await blob.arrayBuffer()); let s = ''; for(let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+const JSZIP_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+
+/* ---------- Kalender (.ics): Termine roh lesen ---------- */
+function icsEvents(ics){ return String(ics).replace(/\r?\n[ \t]/g, '').split(/BEGIN:VEVENT/i).slice(1).map(e => e.split(/END:VEVENT/i)[0]); }
+const icsVal = (e, k) => { const m = e.match(new RegExp('^' + k + '(?:;[^:\\r\\n]*)?:(.*)$', 'im')); return m ? m[1].replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim() : ''; };
+function icsDate(e){
+  const m = e.match(/^DTSTART(?:;[^:\r\n]*)?:(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})\d{2}(Z)?)?/im); if(!m) return { date:'', time:'' };
+  if(!m[4]) return { date:`${m[1]}-${m[2]}-${m[3]}`, time:'' };
+  const D = m[6] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  return { date: iso(D), time: pad2(D.getHours()) + ':' + pad2(D.getMinutes()) };
+}
+
+/* ===================== ANHÄNGE aus dem Kalender ===================== */
+const MIME_BY_EXT = { pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', heic:'image/heic', webp:'image/webp',
+  pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', msg:'application/vnd.ms-outlook', txt:'text/plain', csv:'text/csv' };
+async function icsAttachments(ics){
+  let n = 0;
+  for(const e of icsEvents(ics)){
+    const atts = [...e.matchAll(/^ATTACH((?:;[^:\r\n]*)?):([^\r\n]*)/gim)]; if(!atts.length) continue;
+    const first = 'Betreff: ' + icsVal(e, 'SUMMARY'), { date } = icsDate(e);
+    const cand = state.tickets.filter(x => String(x.raw || '').split('\n')[0].trim() === first.trim());
+    const t = cand.find(x => x.date === date) || cand[0]; if(!t) continue;
+    const list = [];
+    for(const [, params, value] of atts){
+      const name = ((params.match(/X-FILENAME="?([^";]+)"?/i) || [])[1] || 'Anhang').trim();
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      const type = (params.match(/FMTTYPE=([^;]+)/i) || [])[1] || MIME_BY_EXT[ext] || 'application/octet-stream';
+      if(/VALUE=URI/i.test(params) || /^https?:/i.test(value)){ list.push({ name, type, url: value.trim(), size:0 }); continue; }
+      try{
+        const bytes = b64ToBytes(value), k = 'att:' + t.id + ':' + name;
+        await IDB.put(k, { name, type, blob: new Blob([bytes], { type }) });
+        list.push({ k, name, type, size: bytes.length }); n++;
+      }catch(err){ console.error('Anhang', name, err); }
+    }
+    if(list.length){ t.attach = list; }
+  }
+  if(n) save();
+  return n;
+}
+function attachHtml(t){
+  const A = t.attach || []; if(!A.length) return '';
+  const ic = a => /pdf/.test(a.type) ? ICON.text : /^image/.test(a.type) ? ICON.photo : ICON.paste;
+  return `<div class="glabel">Anhänge</div><div class="group">${A.map((a, i) => `<div class="row tap" data-act="openAtt" data-id="${t.id}" data-i="${i}"><span class="att-ic">${ic(a)}</span><span class="k ellip">${esc(a.name)}</span><span class="v">${a.size ? fmtSize(a.size) : 'Link'}</span><span class="chev">${ICON.chev}</span></div>`).join('')}</div>
+    <div class="gfoot">PDF und Bilder öffnen sich hier. Andere Dateien (z. B. PowerPoint) über «Öffnen in …».</div>`;
+}
+let attUrl = null;
+async function openAttachment(id, i){
+  const t = state.tickets.find(x => x.id === id), a = t && (t.attach || [])[+i]; if(!a) return;
+  if(a.url){ window.open(a.url, '_blank'); return; }
+  let rec = null; try{ rec = await IDB.get(a.k); }catch(e){}
+  if(!rec || !rec.blob){ toast('Anhang nicht mehr gespeichert – Kalender neu importieren'); return; }
+  if(attUrl) URL.revokeObjectURL(attUrl);
+  attUrl = URL.createObjectURL(rec.blob);
+  const isImg = /^image\//.test(a.type), isPdf = /pdf/.test(a.type);
+  if(!isImg && !isPdf){ await deliver(a.name, rec.blob, a.type, true); return; }
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="openDetailBack" data-id="${id}">Zurück</button><div class="sh-title ellip" style="max-width:56vw">${esc(a.name)}</div><button class="txtbtn bold" data-act="closeSheet">Fertig</button></div>
+    ${isImg ? `<img src="${attUrl}" alt="" style="width:100%;border-radius:12px;margin-top:8px;background:#fff">` : `<iframe class="att-view" src="${attUrl}" title="${esc(a.name)}"></iframe>`}
+    <div class="hacts" style="margin-top:12px;display:flex;gap:10px">
+      <a class="btn-tint" style="flex:1;text-decoration:none" href="${attUrl}" target="_blank" rel="noopener">Vollbild</a>
+      <button class="btn-tint" style="flex:1" data-act="shareAtt" data-id="${id}" data-i="${i}">${ICON.upload}Öffnen in …</button>
+    </div>`, 'att');
+}
+async function shareAttachment(id, i){
+  const t = state.tickets.find(x => x.id === id), a = t && (t.attach || [])[+i]; if(!a || !a.k) return;
+  const rec = await IDB.get(a.k); if(rec && rec.blob) deliver(a.name, rec.blob, a.type, true);
+}
+
+/* ===================== HWLC ===================== */
+const HWLC_SHEETS = ['Lieferungen', 'Dockingstation Alt', 'Dockingstation Neu', 'Monitoren Alt', 'Monitoren Neu', 'Host Geräte Alt', 'Host Geräte Alt Wiedereinsatz', 'Host Geräte Neu'];
+const HWLC_HEAD = ['0', 'Eingabe QR-ID-S/N Geräte', 'gross', 'Barcode aus Spalte A', 'Spalte1', 'Spalte2'];
+// Gerätetyp aus dem Code: 41/42… Monitor, 62/72… Dockingstation, 22/32… oder Hostname = Host
+function devKind(code){
+  const c = normCode(code);
+  if(/^4[12]\d{8}$/.test(c)) return 'Monitor';
+  if(/^[67]2\d{8}$/.test(c)) return 'Dock';
+  if(/^[23]2\d{8}$/.test(c) || /^ZRH[A-Z][A-Z0-9]{3,5}$/.test(c)) return 'Host';
+  return '';
+}
+function hwlcSheet(kind, mode){
+  if(kind === 'Monitor') return mode === 'neu' ? 'Monitoren Neu' : 'Monitoren Alt';
+  if(kind === 'Dock') return mode === 'neu' ? 'Dockingstation Neu' : 'Dockingstation Alt';
+  return mode === 'neu' ? 'Host Geräte Neu' : mode === 'wieder' ? 'Host Geräte Alt Wiedereinsatz' : 'Host Geräte Alt';
+}
+const KIND_LABEL = { Monitor:'Monitor', Dock:'Dockingstation', Host:'Host', Peripherie:'Peripherie', Gerät:'Gerät' };
+const KIND_SHORT = { Monitor:'Monitor', Dock:'Dock', Host:'Host', Peripherie:'Zubehör', Gerät:'Gerät' };
+
+// Auftrag aus der Termin-Beschreibung (HTML-Teil, damit durchgestrichene Zeilen wegfallen)
+function hwlcParseDesc(html, plain){
+  const out = { kv:{}, rows:[], notes:[], places:[] };
+  const clean = s => String(s || '').replace(/ /g, ' ').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+  if(html && /<t[dr]\b/i.test(html)){
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('s,strike,del').forEach(x => x.remove());
+    doc.querySelectorAll('[style]').forEach(x => { if(/line-through/i.test(x.getAttribute('style'))) x.remove(); });
+    let place = '';
+    const walk = [...doc.body.querySelectorAll('p, table')].filter(el => el.tagName === 'TABLE' || !el.closest('table'));
+    let stop = false;
+    for(const el of walk){
+      if(stop) break;
+      if(el.tagName === 'TABLE'){
+        for(const tr of el.querySelectorAll('tr')){
+          const cellTxt = c => { const ps = [...c.querySelectorAll('p,div,li')].filter(x => !x.querySelector('p,div,li')); return clean(ps.length ? ps.map(x => clean(x.textContent)).filter(Boolean).join('\n') : c.textContent); };
+          const td = [...tr.querySelectorAll('td,th')].map(cellTxt);
+          if(td.length === 2 && /:$/.test(td[0])) out.kv[td[0].replace(/:$/, '')] = td[1];
+          else if(td.length >= 3 && /auftrag/i.test(td[0]) && !/^auftrag$/i.test(td[0])){
+            const nums = (td[1].match(/\d+/g) || []), count = nums.length ? +nums[nums.length - 1] : null;
+            out.rows.push({ auftrag: td[0], count, desc: td.slice(2).join(' ').replace(/\n+/g, ' · '), place: place || out.kv['Ort'] || '' });
+          }
+        }
+      } else {
+        const tx = clean(el.textContent); if(!tx) continue;
+        if(/^(gruss|gruß|freundliche|beste gr)/i.test(tx)){ stop = true; continue; }
+        if(/^hier der auftrag/i.test(tx)) continue;
+        const pm = tx.match(/^\d+\.\s*Standort\s+(.+)$/i);
+        if(pm){ place = pm[1].trim(); out.places.push(place); continue; }
+        out.notes.push(tx);
+      }
+    }
+  } else if(plain){
+    const txt = clean(plain), body = txt.split(/\n(?:Gruss|Gruß) und Dank/i)[0];
+    ['Tranche', 'D/DA', 'Ort', 'Datum', 'Kontaktperson', 'Standortspezialität'].forEach(k => { const m = body.match(new RegExp(k.replace('/', '\\/') + ':\\s*\\n?([^\\n]*)')); if(m) out.kv[k] = m[1].trim(); });
+    for(const m of body.matchAll(/((?:Peripherie|Tausch|Aufbau|Abbau)[^\n]*Auftrag[^\n]*)\n([\d\s-]+)\n([^\n]+)/gi)){
+      const nums = m[2].match(/\d+/g) || []; out.rows.push({ auftrag: m[1].trim(), count: nums.length ? +nums[nums.length - 1] : null, desc: m[3].trim(), place: out.kv['Ort'] || '' });
+    }
+    body.split('\n').forEach(l => { if(/^@|bitte|achtung|wichtig|zugang|ausweis/i.test(l)) out.notes.push(l.trim()); });
+  }
+  if(out.kv['Ort'] && !out.places.includes(out.kv['Ort'])) out.places.unshift(out.kv['Ort']);
+  return out;
+}
+function hwlcSoll(rows){
+  let mon = null, host = null, lief = 0, monOpen = false;
+  for(const r of rows){
+    if(/peripherie/i.test(r.auftrag)){ if(r.count == null) monOpen = true; else mon = (mon || 0) + r.count; }
+    else if(/tausch|abbau|abholung|r(ü|ue)ckbau/i.test(r.auftrag)){ if(r.count != null) host = (host || 0) + r.count; }
+    else if(/aufbau|lieferung|rampe/i.test(r.auftrag)){ lief += r.count || 0; }
+  }
+  return { mon, host, lief, monOpen };
+}
+function hwlcImport(ics){
+  const found = [];
+  state.hwlc ||= {};
+  for(const e of icsEvents(ics)){
+    const sum = icsVal(e, 'SUMMARY');
+    if(!/hardware-?life\s?cycle|tranche/i.test(sum) && !/^"?HWLC_/.test(sum)) continue;
+    const km = sum.match(/HWLC_([A-Z]{2,5})_(?:([A-Za-z]+)_)?(\d{2})\.(\d{2})\.(\d{2})/); if(!km) continue;
+    const key = km[0], { date, time } = icsDate(e);
+    const d = hwlcParseDesc(icsVal(e, 'X-ALT-DESC'), icsVal(e, 'DESCRIPTION'));
+    const prev = state.hwlc[key] || {};
+    state.hwlc[key] = { ...prev, key, da: km[1], extra: km[2] || '', date: `20${km[3]}-${km[4]}-${km[5]}` || date, time, title: sum,
+      ort: d.kv['Ort'] || icsVal(e, 'LOCATION') || '', kontakt: d.kv['Kontaktperson'] || '', spez: d.kv['Standortspezialität'] || '',
+      rows: d.rows, notes: d.notes, places: d.places, soll: hwlcSoll(d.rows), items: prev.items || [], updated: new Date().toISOString() };
+    found.push(key);
+  }
+  if(found.length){
+    const today = iso(new Date());
+    const pick = found.map(k => state.hwlc[k]).filter(h => !h.extra).sort((a, b) => Math.abs(new Date(a.date) - new Date(today)) - Math.abs(new Date(b.date) - new Date(today)))[0];
+    if(pick && (!state.settings.hwlcKey || !state.hwlc[state.settings.hwlcKey] || state.hwlc[state.settings.hwlcKey].date < today)) state.settings.hwlcKey = pick.key;
+    save();
+  }
+  return found;
+}
+const hwlcList = () => Object.values(state.hwlc || {}).sort((a, b) => (b.date + b.key).localeCompare(a.date + a.key));
+function hwlcCur(){
+  const L = hwlcList(); if(!L.length) return null;
+  return (state.settings.hwlcKey && state.hwlc[state.settings.hwlcKey]) || L.find(h => h.date === iso(new Date()) && !h.extra) || L[0];
+}
+function hwlcCounts(h){
+  const c = { Monitor:0, Dock:0, Host:0, neu:0, wieder:0 };
+  (h.items || []).forEach(x => { if(/Neu$/.test(x.sheet)) c.neu++; else { c[x.kind] = (c[x.kind] || 0) + 1; if(/Wiedereinsatz/.test(x.sheet)) c.wieder++; } });
+  return c;
+}
+function hwlcAdd(code, kind){
+  const h = hwlcCur(); if(!h) return { ok:false, title:'Keine HWLC-Tranche', sub:'Zuerst den Kalender importieren' };
+  const c = String(code).trim().toUpperCase().replace(/\s+/g, '');
+  if(!c) return { ok:false, title:'Leerer Code' };
+  const dup = (h.items || []).find(x => x.code === c);
+  if(dup) return { ok:null, title:'Schon erfasst', sub:`${c} · ${dup.sheet}` };
+  kind ||= devKind(c);
+  if(!kind) return { ok:null, title:'Welcher Gerätetyp?', sub:c, ask:[['Monitor', () => hwlcAdd(c, 'Monitor')], ['Dock', () => hwlcAdd(c, 'Dock')], ['Host', () => hwlcAdd(c, 'Host')]] };
+  const sheet = hwlcSheet(kind, state.settings.hwlcMode || 'alt');
+  (h.items ||= []).push({ code:c, kind, sheet, at:new Date().toISOString() });
+  save();
+  const n = hwlcCounts(h), soll = kind === 'Monitor' ? h.soll && h.soll.mon : kind === 'Host' ? h.soll && h.soll.host : null;
+  return { ok:true, title:`${KIND_LABEL[kind]} ${c}`, sub:`${sheet} · ${n[kind]}${soll ? ' / ' + soll : ''}` };
+}
+function meter(ist, soll){
+  if(!soll) return '';
+  const p = Math.min(100, Math.round(ist / soll * 100));
+  return `<div class="meter${ist >= soll ? ' done' : ''}"><i style="width:${p}%"></i></div>`;
+}
+function renderHwlc(){
+  const el = $('#tab-hwlc'); if(!el) return;
+  const L = hwlcList(), h = hwlcCur();
+  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Rücknahme</div><h1>HWLC</h1></div>
+    <div class="lt-r"><button class="circle" data-act="hwlcNew" aria-label="Tranche anlegen">${ICON.plus}</button></div></div>`;
+  if(!h){
+    el.innerHTML = head + `<div class="empty"><h3>Keine Tranche</h3><p>Kalender (.ics) unter «Erfassen» importieren. Die HWLC-Tranche mit Dienstabteilung, Datum und Anzahl Geräte wird automatisch erkannt.</p>
+      <button class="btn-fill" data-act="hwlcNew">${ICON.plus}Tranche von Hand anlegen</button></div>`;
+    return;
+  }
+  const n = hwlcCounts(h), S = h.soll || {}, mode = state.settings.hwlcMode || 'alt';
+  const tile = (label, ist, soll, extra = '') => `<div class="card"><small>${label}</small><div><b>${ist}</b>${soll ? `<span class="of"> / ${soll}</span>` : ''}${extra}</div>${meter(ist, soll)}</div>`;
+  const chips = L.slice(0, 8).map(x => `<button class="chip${x.key === h.key ? ' on' : ''}" data-act="hwlcPick" data-k="${esc(x.key)}">${esc(x.da)}${x.extra ? ' · ' + esc(x.extra) : ''} <span>${esc(x.date.slice(8, 10) + '.' + x.date.slice(5, 7) + '.')}</span></button>`).join('');
+  const bySheet = {}; (h.items || []).forEach(x => (bySheet[x.sheet] ||= []).push(x));
+  const sel = state.settings.hwlcSheet && bySheet[state.settings.hwlcSheet] ? state.settings.hwlcSheet : (Object.keys(bySheet)[0] || '');
+  const tel = s => String(s || '').replace(/(\+?\d[\d ]{8,}\d)/g, m => `<a href="tel:${m.replace(/\s/g, '')}">${esc(m)}</a>`);
+  const done = S.mon != null || S.host != null ? (S.mon == null || n.Monitor >= S.mon) && (S.host == null || n.Host >= S.host) : false;
+  el.innerHTML = head + `
+    <div class="chips" style="margin:0 0 12px;overflow-x:auto">${chips}</div>
+    <div class="card hw-head">
+      <div class="hw-key">${esc(h.key)}.xlsx</div>
+      <div class="hw-sub">${esc(longDate(h.date))}${h.time ? ' · ' + esc(h.time) : ''}${h.ort ? ' · ' + esc(h.ort) : ''}</div>
+      ${h.kontakt ? `<div class="hw-sub">${ICON.phone}<span>${tel(esc(h.kontakt))}</span></div>` : ''}
+      ${h.spez ? `<div class="hw-sub"><b>${esc(h.spez)}</b></div>` : ''}
+      ${done ? `<div class="badge green" style="margin-top:8px;display:inline-block">Alles zurückgenommen</div>` : ''}
+    </div>
+    <div class="cnt">
+      ${tile('Monitore', n.Monitor || 0, S.mon, S.monOpen && !S.mon ? '<span class="of"> nach Bedarf</span>' : '')}
+      ${tile('Hosts', n.Host || 0, S.host, n.wieder ? `<div class="of" style="font-size:13px">davon ${n.wieder} Wiedereinsatz</div>` : '')}
+      ${tile('Dockingstationen', n.Dock || 0, null)}
+      ${n.neu ? tile('Neu erfasst', n.neu, null) : ''}
+    </div>
+    ${(h.notes || []).length ? `<div class="glabel">Wichtige Infos</div><div class="info-box">${h.notes.map(esc).join('\n\n')}</div>` : ''}
+    ${(h.rows || []).length ? `<div class="glabel">Auftrag laut Kalender</div><div class="group">${h.rows.map(r => `<div class="row"><span class="k"><b>${r.count == null ? '–' : r.count}</b> · ${esc(r.auftrag)}<br><small style="color:var(--label2)">${esc(r.desc)}${(h.places || []).length > 1 && r.place ? ' · ' + esc(r.place) : ''}</small></span></div>`).join('')}</div>` : ''}
+    ${S.lief ? `<div class="gfoot">${S.lief} Geräte als Lieferung/Aufbau – zählen nicht zur Rücknahme.</div>` : ''}
+    <div class="glabel">Erfassen als</div>
+    <div class="seg" id="hwModeSeg">${[['alt', 'Alt'], ['wieder', 'Wiedereinsatz'], ['neu', 'Neu']].map(([v, l]) => `<button class="${mode === v ? 'on' : ''}" data-act="hwlcMode" data-v="${v}">${l}</button>`).join('')}</div>
+    <div class="gfoot">Der Typ kommt aus der Nummer: 41/42… Monitor, 62/72… Dockingstation, 22/32… Host.</div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn-fill" style="flex:2" data-act="hwlcScan">${ICON.qr}Scannen</button>
+      <button class="btn-tint" style="flex:1" data-act="hwlcManual">Eingeben</button>
+    </div>
+    <div class="glabel"><span>Tabelle</span><span>${(h.items || []).length} Geräte</span></div>
+    ${Object.keys(bySheet).length ? `<div class="chips" style="margin:0 0 8px;overflow-x:auto">${HWLC_SHEETS.filter(s => bySheet[s]).map(s => `<button class="chip${s === sel ? ' on' : ''}" data-act="hwlcSheet" data-v="${esc(s)}">${esc(s)} <span>${bySheet[s].length}</span></button>`).join('')}</div>
+      <div class="group tbl">${(bySheet[sel] || []).map((x, i) => `<div class="row"><span class="n">${i + 1}</span><span class="code">${esc(x.code)}</span><span class="badge">${esc(KIND_SHORT[x.kind] || x.kind)}</span><button class="xbtn" data-act="hwlcDel" data-v="${esc(x.code)}" aria-label="Löschen">${ICON.close}</button></div>`).join('')}</div>`
+      : `<div class="gfoot" style="margin-top:0">Noch nichts gescannt.</div>`}
+    <button class="btn-fill" style="width:100%;margin-top:18px;background:var(--green)" data-act="hwlcExcel" data-v="mail">${ICON.mail}Excel per Mail</button>
+    <button class="btn-tint" style="width:100%;margin-top:10px" data-act="hwlcExcel" data-v="save">${ICON.download}Excel sichern</button>
+    <div class="glabel">Vorlage</div>
+    <div class="group"><label class="row tap"><span class="k" id="hwTplName">Vorlage wird geprüft …</span><span class="v blue">Laden</span><input type="file" id="hwlcTpl" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="vh"></label></div>
+    <div class="gfoot">Einmal die Datei «HWLC_DA_Datum_Vorlage.xlsx» laden. Die App füllt dann Spalte B ab Zeile 3 im passenden Blatt, Formeln und Format bleiben. Ohne Vorlage baut die App eine Datei mit gleichen Blättern und Spalten.</div>
+    <div class="group" style="margin-top:18px"><div class="row tap" data-act="hwlcDelTranche"><span class="k" style="color:var(--red)">Tranche löschen</span></div></div>`;
+  IDB.get('hwlc-template').then(r => { const x = $('#hwTplName'); if(x) x.innerHTML = r ? `<span style="display:flex;gap:8px;align-items:center"><span class="att-ic" style="color:var(--green)">${ICON.check}</span><span class="ellip">${esc(r.name)}</span></span>` : 'Keine Vorlage geladen'; }).catch(() => { const x = $('#hwTplName'); if(x) x.textContent = 'Keine Vorlage geladen'; });
+}
+function hwlcNewSheet(){
+  const d = iso(new Date());
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Neue Tranche</div><button class="txtbtn bold" data-act="hwlcNewSave">Anlegen</button></div>
+    <div class="group form" style="margin-top:8px">
+      <div class="row"><label class="k" for="hwDa">Dienstabteilung</label><input id="hwDa" placeholder="z. B. SRZ" autocapitalize="characters" autocomplete="off"></div>
+      <div class="row"><label class="k" for="hwDate">Datum</label><input type="date" id="hwDate" value="${d}"></div>
+      <div class="row"><label class="k" for="hwMon">Monitore</label><input id="hwMon" inputmode="numeric" placeholder="Anzahl"></div>
+      <div class="row"><label class="k" for="hwHost">Hosts</label><input id="hwHost" inputmode="numeric" placeholder="Anzahl"></div>
+    </div>
+    <div class="gfoot">Normalerweise kommt die Tranche aus dem Kalender-Import.</div>`, 'hwnew');
+}
+function hwlcManualSheet(mode){
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Fertig</button><div class="sh-title">Code eingeben</div><span></span></div>
+    <div class="group form" style="margin-top:8px"><div class="row"><label class="k" for="manCode">Asset-ID / SN</label><input id="manCode" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="z. B. 4200012345"></div></div>
+    <button class="btn-fill" style="width:100%;margin-top:14px" data-act="${mode === 'move' ? 'moveManAdd' : 'hwlcManAdd'}">Hinzufügen</button>
+    <div class="gfoot" id="manMsg"></div>`, 'man');
+  setTimeout(() => { const i = $('#manCode'); i && i.focus(); }, 350);
+}
+
+// Excel: Vorlage füllen (JSZip) – sonst gleiche Struktur mit SheetJS
+const xmlEsc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+async function hwlcFillTemplate(buf, bySheet){
+  await loadScript(JSZIP_URL);
+  const zip = await JSZip.loadAsync(buf, { createFolders:false });
+  const wb = await zip.file('xl/workbook.xml').async('string');
+  const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  const relTarget = id => { const m = rels.match(new RegExp('<Relationship[^>]*Id="' + id + '"[^>]*Target="([^"]+)"')) || rels.match(new RegExp('<Relationship[^>]*Target="([^"]+)"[^>]*Id="' + id + '"')); return m ? 'xl/' + m[1].replace(/^\/?xl\//, '') : null; };
+  const sheets = {};
+  for(const m of wb.matchAll(/<sheet\b[^>]*\/>/g)){
+    const nm = (m[0].match(/name="([^"]+)"/) || [])[1], rid = (m[0].match(/r:id="([^"]+)"/) || [])[1];
+    if(nm && rid) sheets[nm.replace(/&amp;/g, '&')] = relTarget(rid);
+  }
+  const missing = Object.keys(bySheet).filter(s => !sheets[s]);
+  if(missing.length) throw new Error('Blatt fehlt in der Vorlage: ' + missing.join(', '));
+  for(const [name, codes] of Object.entries(bySheet)){
+    const path = sheets[name]; let x = await zip.file(path).async('string');
+    let lastRow = 2;
+    codes.forEach((code, i) => {
+      const r = 3 + i, v = xmlEsc(code);
+      const reB = new RegExp('<c r="B' + r + '"([^>]*?)(?:/>|>[\\s\\S]*?</c>)');
+      if(reB.test(x)){
+        x = x.replace(reB, (all, attrs) => { const s = (attrs.match(/s="(\d+)"/) || [])[1]; return `<c r="B${r}"${s ? ` s="${s}"` : ''} t="inlineStr"><is><t>${v}</t></is></c>`; });
+        x = x.replace(new RegExp('(<c r="C' + r + '"[^>]*>(?:<f[^>]*/>|<f[^>]*>[^<]*</f>))(?:<v/>|<v>[^<]*</v>)?'), `$1<v>${v}</v>`);
+        x = x.replace(new RegExp('(<c r="D' + r + '"[^>]*>(?:<f[^>]*/>|<f[^>]*>[^<]*</f>))(?:<v/>|<v>[^<]*</v>)?'), `$1<v>*${v}*</v>`);
+      } else {
+        const row = `<row r="${r}" spans="1:6" ht="30" customHeight="1"><c r="A${r}" s="11"><v>${i + 1}</v></c><c r="B${r}" s="14" t="inlineStr"><is><t>${v}</t></is></c><c r="C${r}" s="14" t="str"><f>UPPER(B${r})</f><v>${v}</v></c><c r="D${r}" s="15" t="str"><f>CONCATENATE("*",C${r},"*")</f><v>*${v}*</v></c></row>`;
+        x = x.replace('</sheetData>', row + '</sheetData>');
+      }
+      lastRow = r;
+    });
+    x = x.replace(/<dimension ref="A1:([A-Z]+)(\d+)"\/>/, (all, col, row) => `<dimension ref="A1:${col}${Math.max(+row, lastRow)}"/>`);
+    zip.file(path, x, { createFolders:false });
+    // Tabelle (ListObject) ggf. verlängern
+    const srel = path.replace(/worksheets\/(sheet\d+\.xml)$/, 'worksheets/_rels/$1.rels'), rf = zip.file(srel);
+    if(rf){
+      const rx = await rf.async('string'), tm = rx.match(/Target="\.\.\/tables\/(table\d+\.xml)"/);
+      if(tm){
+        const tp = 'xl/tables/' + tm[1]; let tx = await zip.file(tp).async('string');
+        tx = tx.replace(/ref="A2:([A-Z]+)(\d+)"/g, (all, col, row) => `ref="A2:${col}${Math.max(+row, lastRow)}"`);
+        zip.file(tp, tx, { createFolders:false });
+      }
+    }
+  }
+  let w2 = wb;
+  if(/<calcPr\b/.test(w2)) w2 = w2.replace(/<calcPr\b(?![^>]*fullCalcOnLoad)/, '<calcPr fullCalcOnLoad="1"');
+  else w2 = w2.replace('</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>');
+  zip.file('xl/workbook.xml', w2, { createFolders:false });
+  return zip.generateAsync({ type:'uint8array', compression:'DEFLATE' });
+}
+async function hwlcPlainWorkbook(bySheet){
+  await loadScript(XLSX_URL);
+  const wb = XLSX.utils.book_new();
+  for(const name of HWLC_SHEETS){
+    const codes = bySheet[name] || [];
+    const aoa = [[], HWLC_HEAD, ...codes.map((c, i) => [i + 1, c, c, '*' + c + '*'])];
+    if(name === 'Lieferungen' && !codes.length) aoa.length = 0;
+    const ws = XLSX.utils.aoa_to_sheet(aoa.length ? aoa : [[]]);
+    codes.forEach((c, i) => { const r = i + 3; ws['C' + r] = { t:'s', v:c, f:`UPPER(B${r})` }; ws['D' + r] = { t:'s', v:'*' + c + '*', f:`CONCATENATE("*",C${r},"*")` }; });
+    ws['!cols'] = [{ wch:5 }, { wch:32 }, { wch:1 }, { wch:37 }, { wch:29 }, { wch:15 }];
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  }
+  return XLSX.write(wb, { bookType:'xlsx', type:'array' });
+}
+async function hwlcExcel(mode){
+  const h = hwlcCur(); if(!h) return;
+  if(!(h.items || []).length){ toast('Noch keine Geräte erfasst'); return; }
+  const bySheet = {}; h.items.forEach(x => (bySheet[x.sheet] ||= []).push(x.code));
+  const name = h.key + '.xlsx', mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const S = h.soll || {}, n = hwlcCounts(h);
+  const miss = [];
+  if(S.mon != null && n.Monitor < S.mon) miss.push(`Monitore ${n.Monitor}/${S.mon}`);
+  if(S.host != null && n.Host < S.host) miss.push(`Hosts ${n.Host}/${S.host}`);
+  let out;
+  try{
+    toast('Excel wird erstellt …');
+    const tpl = await IDB.get('hwlc-template').catch(() => null);
+    out = tpl ? await hwlcFillTemplate(tpl.data, bySheet) : await hwlcPlainWorkbook(bySheet);
+  }catch(e){ console.error(e); toast('Excel fehlgeschlagen: ' + errMsg(e)); return; }
+  if(miss.length) toast('Noch offen: ' + miss.join(', '));
+  if(mode === 'mail'){
+    const file = new File([out], name, { type:mime });
+    const text = `${h.key}\n\n` + Object.entries(bySheet).map(([s, c]) => `${s}: ${c.length}`).join('\n') + (miss.length ? `\n\nNoch offen: ${miss.join(', ')}` : '');
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      try{ await navigator.share({ files:[file], title:h.key, text }); return; }catch(e){ if(e.name === 'AbortError') return; }
+    }
+  }
+  await deliver(name, out, mime, mode === 'mail');
+}
+
+/* ===================== UMZUG ===================== */
+const PERI = ['Tastatur', 'Maus', 'Kamera', 'Headset', 'Lautsprecher', 'Netzteil', 'Kabel'];
+function moveCur(){
+  const M = state.moves || []; if(!M.length) return null;
+  return M.find(m => m.id === state.settings.moveId) || M[M.length - 1];
+}
+function moveNewSheet(){
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Neuer Umzug</div><button class="txtbtn bold" data-act="moveNewSave">Anlegen</button></div>
+    <div class="group form" style="margin-top:8px">
+      <div class="row"><label class="k" for="mvName">Name</label><input id="mvName" placeholder="z. B. Amtshaus V" autocomplete="off"></div>
+      <div class="row"><label class="k" for="mvDate">Datum</label><input type="date" id="mvDate" value="${view.date}"></div>
+    </div>`, 'mvnew');
+  setTimeout(() => { const i = $('#mvName'); i && i.focus(); }, 350);
+}
+const tblKey = x => (x.room || '?') + '|' + (x.table || '');
+const roomSort = (a, b) => String(a).localeCompare(String(b), 'de', { numeric:true });
+function moveAdd(code, kind, label){
+  const m = moveCur(); if(!m) return { ok:false, title:'Kein Umzug angelegt' };
+  const cur = m.cur || {};
+  const c = code ? String(code).trim().toUpperCase().replace(/\s+/g, '') : '';
+  if(cur.mode === 'auf'){
+    if(!cur.troom) return { ok:false, title:'Zielraum fehlt', sub:'Oben den Zielraum eintragen' };
+    const it = c && m.items.find(x => x.code === c);
+    if(!it){
+      if(!c) return { ok:false, title:'Kein Code' };
+      return { ok:null, title:'Nicht im Abbau erfasst', sub:c, ask:[['Trotzdem aufnehmen', () => { m.items.push({ id:uid(), code:c, kind: kind || devKind(c) || 'Gerät', room:'', table:'', lager:'', troom:cur.troom, ttable:cur.ttable || '', status:'auf', at:new Date().toISOString(), atAuf:new Date().toISOString() }); save(); return { ok:true, title:'Aufgenommen', sub:`${c} → ${cur.troom}` }; }], ['Verwerfen', () => ({ ok:null, title:'Verworfen' })]] };
+    }
+    it.troom = cur.troom; it.ttable = cur.ttable || ''; it.status = 'auf'; it.atAuf = new Date().toISOString();
+    save();
+    // Tisch-Kontrolle: Geräte vom gleichen Ursprungstisch sollen zusammen bleiben
+    const mates = m.items.filter(x => x !== it && x.code && tblKey(x) === tblKey(it) && x.status === 'auf');
+    const other = mates.find(x => x.troom !== it.troom || (x.ttable || '') !== (it.ttable || ''));
+    const from = `aus ${it.room || '?'}${it.table ? ' · Tisch ' + it.table : ''}`;
+    if(other) return { ok:null, title:`${KIND_LABEL[it.kind] || it.kind} ${c}`, sub:`${from} – andere Geräte dieses Tisches stehen in ${other.troom}${other.ttable ? ' · Tisch ' + other.ttable : ''}` };
+    return { ok:true, title:`${KIND_LABEL[it.kind] || it.kind} ${c}`, sub:`${from} → ${it.troom}${it.ttable ? ' · Tisch ' + it.ttable : ''}` };
+  }
+  if(!cur.room) return { ok:false, title:'Raum fehlt', sub:'Oben zuerst den Raum eintragen' };
+  if(c){
+    const ex = m.items.find(x => x.code === c);
+    if(ex){
+      if(ex.room === cur.room && (ex.table || '') === (cur.table || '')) return { ok:null, title:'Schon erfasst', sub:`${c} · ${ex.room}${ex.table ? ' · Tisch ' + ex.table : ''}` };
+      const was = `${ex.room}${ex.table ? ' · Tisch ' + ex.table : ''}`;
+      Object.assign(ex, { room:cur.room, table:cur.table || '', lager:cur.lager || ex.lager || '' }); save();
+      return { ok:null, title:'Umgehängt', sub:`${c}: ${was} → ${cur.room}${cur.table ? ' · Tisch ' + cur.table : ''}` };
+    }
+  }
+  kind ||= c ? (devKind(c) || 'Gerät') : 'Peripherie';
+  m.items.push({ id:uid(), code:c, kind, label: label || '', room:cur.room, table:cur.table || '', lager:cur.lager || '', troom:'', ttable:'', status: cur.lager ? 'lager' : 'ab', at:new Date().toISOString() });
+  save();
+  const here = m.items.filter(x => x.room === cur.room && (x.table || '') === (cur.table || '')).length;
+  return { ok:true, title: c ? `${KIND_LABEL[kind] || kind} ${c}` : (label || kind), sub:`${cur.room}${cur.table ? ' · Tisch ' + cur.table : ''} · ${here} am Platz` };
+}
+function moveCounts(items){
+  const c = {}; items.forEach(x => { const k = x.kind === 'Peripherie' ? (x.label || 'Peripherie') : x.kind; c[k] = (c[k] || 0) + 1; });
+  const order = ['Monitor', 'Dock', 'Host', 'Gerät'];
+  const pl = { Monitor:['Monitor', 'Monitore'], Dock:['Dock', 'Docks'], Host:['Host', 'Hosts'], Gerät:['Gerät', 'Geräte'] };
+  return Object.keys(c).sort((a, b) => (order.indexOf(a) + 1 || 9) - (order.indexOf(b) + 1 || 9)).map(k => `${c[k]} ${pl[k] ? pl[k][c[k] === 1 ? 0 : 1] : k}`).join(' · ');
+}
+const statusBadge = x => x.status === 'auf' ? `<span class="badge green">→ ${esc(x.troom)}${x.ttable ? ' T' + esc(x.ttable) : ''}</span>` : x.status === 'lager' ? `<span class="badge orange">Lager ${esc(x.lager)}</span>` : `<span class="badge">Abgebaut</span>`;
+function renderMove(){
+  const el = $('#tab-move'); if(!el) return;
+  const M = state.moves || [], m = moveCur();
+  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Move</div><h1>Umzug</h1></div>
+    <div class="lt-r"><button class="circle" data-act="moveNew" aria-label="Neuer Umzug">${ICON.plus}</button></div></div>`;
+  const withAtt = state.tickets.filter(t => (t.attach || []).length || /umzug|begehung|\bmove\b/i.test(t.title + ' ' + (t.raw || '').split('\n')[0]))
+    .sort((a, b) => (b.date + (b.start || '')).localeCompare(a.date + (a.start || ''))).slice(0, 6);
+  const termine = withAtt.length ? `<div class="glabel">Umzugs-Termine & Anhänge</div><div class="group">${withAtt.map(t => `<div class="row tap" data-act="detail" data-id="${t.id}"><span class="k ellip">${esc((String(t.raw || '').split('\n')[0].replace(/^Betreff:\s*/, '').replace(/^[A-ZÄÖÜ]+\s*--\s*/, '') || t.title || t.ticket || 'Termin').slice(0, 90))}<br><small style="color:var(--label2)">${esc(longDate(t.date))}${t.start ? ' · ' + esc(t.start) : ''}</small></span>${(t.attach || []).length ? `<span class="badge">${ICON.paste.replace('<svg', '<svg width="12" height="12"')} ${t.attach.length}</span>` : ''}<span class="chev">${ICON.chev}</span></div>`).join('')}</div>` : '';
+  if(!m){
+    el.innerHTML = head + `<div class="empty"><h3>Kein Umzug</h3><p>Lege einen Umzug an. Danach Raum und Tisch eintragen und alle Geräte im Raum scannen.</p><button class="btn-fill" data-act="moveNew">${ICON.plus}Umzug anlegen</button></div>` + termine;
+    return;
+  }
+  const cur = m.cur ||= { mode:'ab', room:'', table:'', lager:'', troom:'', ttable:'' };
+  const ab = cur.mode !== 'auf';
+  const rooms = {}; m.items.forEach(x => ((rooms[x.room || '–'] ||= {})[x.table || ''] ||= []).push(x));
+  const nAuf = m.items.filter(x => x.status === 'auf').length, nAll = m.items.length;
+  const list = Object.keys(rooms).sort(roomSort).map(r => {
+    const T = rooms[r], all = Object.values(T).flat();
+    return `<div class="glabel"><span>${esc(r)}</span><span>${esc(moveCounts(all))}</span></div>
+      <div class="group tbl">
+        ${Object.keys(T).sort(roomSort).map(tb => `
+          <div class="row tbl-h"><span class="k"><b>${tb ? 'Tisch ' + esc(tb) : 'Ohne Tisch'}</b></span>
+            <button class="xbtn blue" data-act="moveCopy" data-r="${esc(r)}" data-t="${esc(tb)}" aria-label="Asset-IDs kopieren">${ICON.copy}</button></div>
+          ${T[tb].map(x => `<div class="row"><span class="code">${x.code ? esc(x.code) : `<span style="font-family:inherit">${esc(x.label || 'Peripherie')}</span>`}</span><span class="badge">${esc(KIND_SHORT[x.kind] || x.kind)}</span>${statusBadge(x)}<button class="xbtn" data-act="moveDel" data-v="${x.id}" aria-label="Löschen">${ICON.close}</button></div>`).join('')}`).join('')}
+        <div class="row tap" data-act="moveRoomActs" data-r="${esc(r)}"><span class="k blue">Raum: kopieren / ins Lager …</span></div>
+      </div>`;
+  }).join('');
+  el.innerHTML = head + `
+    ${M.length > 1 ? `<div class="chips" style="margin:0 0 12px;overflow-x:auto">${M.slice().reverse().map(x => `<button class="chip${x.id === m.id ? ' on' : ''}" data-act="movePick" data-v="${x.id}">${esc(x.name)} <span>${esc(x.date.slice(8, 10) + '.' + x.date.slice(5, 7) + '.')}</span></button>`).join('')}</div>` : ''}
+    <div class="card hw-head"><div class="hw-key">${esc(m.name)}</div><div class="hw-sub">${esc(longDate(m.date))} · ${nAll} Geräte · ${nAuf} aufgebaut</div></div>
+    <div class="seg">${[['ab', 'Abbau'], ['auf', 'Aufbau']].map(([v, l]) => `<button class="${cur.mode === v || (v === 'ab' && ab && cur.mode !== 'auf') ? 'on' : ''}" data-act="moveMode" data-v="${v}">${l}</button>`).join('')}</div>
+    <div class="group form" style="margin-top:12px">
+      ${ab ? `
+      <div class="row"><label class="k" for="mvRoom">Raum</label><input id="mvRoom" data-mv="room" value="${esc(cur.room)}" placeholder="z. B. Büro 103" autocomplete="off"></div>
+      <div class="row"><label class="k" for="mvTable">Tisch-Nr.</label><input id="mvTable" data-mv="table" value="${esc(cur.table)}" placeholder="optional" inputmode="text" autocomplete="off"><button class="pillbtn" data-act="moveNextTable">+1</button></div>
+      <div class="row"><label class="k" for="mvLager">Zwischenlager</label><input id="mvLager" data-mv="lager" value="${esc(cur.lager)}" placeholder="optional, z. B. Büro 115" autocomplete="off"></div>` : `
+      <div class="row"><label class="k" for="mvTroom">Zielraum</label><input id="mvTroom" data-mv="troom" value="${esc(cur.troom)}" placeholder="z. B. Büro 215" autocomplete="off"></div>
+      <div class="row"><label class="k" for="mvTtable">Ziel-Tisch</label><input id="mvTtable" data-mv="ttable" value="${esc(cur.ttable)}" placeholder="optional" autocomplete="off"><button class="pillbtn" data-act="moveNextTable">+1</button></div>`}
+    </div>
+    <div class="gfoot">${ab ? 'Alle Asset-IDs im Raum scannen. Mit Tisch-Nr. weiss die App beim Aufbau, was zusammengehört.' : 'Gerät scannen – die App zeigt, aus welchem Raum und Tisch es kommt, und warnt, wenn ein Tisch auseinandergerissen wird.'}</div>
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn-fill" style="flex:2" data-act="moveScan">${ICON.qr}Scannen</button>
+      <button class="btn-tint" style="flex:1" data-act="moveManual">Eingeben</button>
+    </div>
+    ${ab ? `<div class="glabel">Zubehör am Platz</div><div class="pchips">${PERI.map(p => `<button class="chip" data-act="movePeri" data-v="${p}">${p}</button>`).join('')}<button class="chip" data-act="movePeriOwn">${ICON.plus.replace('<svg', '<svg width="14" height="14"')} Andere</button></div>` : ''}
+    ${list || `<div class="gfoot" style="margin-top:18px">Noch keine Geräte erfasst.</div>`}
+    ${nAll ? `<button class="btn-fill" style="width:100%;margin-top:18px;background:var(--green)" data-act="moveExcel" data-v="mail">${ICON.mail}Excel per Mail</button>
+    <button class="btn-tint" style="width:100%;margin-top:10px" data-act="moveExcel" data-v="save">${ICON.download}Excel sichern</button>
+    <div class="gfoot">Excel mit einer Zeile pro Tisch (Raum, Tisch, Monitore, Dock, Zubehör, Lager, Ziel) und einer Liste aller Asset-IDs zum Kopieren in den Auftrag.</div>` : ''}
+    ${termine}
+    <div class="group" style="margin-top:18px"><div class="row tap" data-act="moveDelJob"><span class="k" style="color:var(--red)">Umzug löschen</span></div></div>`;
+}
+function moveRoomActs(r){
+  const m = moveCur(); if(!m) return;
+  const cur = m.cur || {};
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">${esc(r)}</div><span></span></div>
+    <div class="group" style="margin-top:8px">
+      <div class="row tap" data-act="moveCopy" data-r="${esc(r)}" data-t="*"><span class="k blue">Alle Asset-IDs kopieren</span></div>
+      <div class="row tap" data-act="moveToLager" data-r="${esc(r)}"><span class="k blue">Alles ins Zwischenlager${cur.lager ? ' «' + esc(cur.lager) + '»' : ''}</span></div>
+      <div class="row tap" data-act="moveSetRoom" data-r="${esc(r)}"><span class="k blue">Hier weiter erfassen</span></div>
+    </div>
+    ${cur.lager ? '' : '<div class="gfoot">Für «ins Zwischenlager» zuerst im Abbau das Feld «Zwischenlager» ausfüllen.</div>'}`, 'mvroom');
+}
+async function moveExcel(mode){
+  const m = moveCur(); if(!m || !m.items.length) return;
+  try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
+  const groups = {}; m.items.forEach(x => (groups[tblKey(x)] ||= []).push(x));
+  const keys = Object.keys(groups).sort(roomSort);
+  const maxMon = Math.max(2, ...keys.map(k => groups[k].filter(x => x.kind === 'Monitor').length));
+  const st = x => x.status === 'auf' ? 'Aufgebaut' : x.status === 'lager' ? 'Zwischenlager' : 'Abgebaut';
+  const T = keys.map(k => {
+    const G = groups[k], f = G[0], mons = G.filter(x => x.kind === 'Monitor').map(x => x.code);
+    const row = { 'Raum':f.room, 'Tisch':f.table };
+    for(let i = 0; i < maxMon; i++) row['Monitor ' + (i + 1)] = mons[i] || '';
+    row['Dockingstation'] = G.filter(x => x.kind === 'Dock').map(x => x.code).join(', ');
+    row['Host'] = G.filter(x => x.kind === 'Host').map(x => x.code).join(', ');
+    row['Andere Geräte'] = G.filter(x => x.kind === 'Gerät').map(x => x.code).join(', ');
+    row['Zubehör'] = moveCounts(G.filter(x => x.kind === 'Peripherie'));
+    row['Zwischenlager'] = [...new Set(G.map(x => x.lager).filter(Boolean))].join(', ');
+    row['Zielraum'] = [...new Set(G.map(x => x.troom).filter(Boolean))].join(', ');
+    row['Ziel-Tisch'] = [...new Set(G.map(x => x.ttable).filter(Boolean))].join(', ');
+    row['Status'] = [...new Set(G.map(st))].join(' / ');
+    row['Asset-IDs'] = G.filter(x => x.code).map(x => x.code).join(' ');
+    return row;
+  });
+  const D = keys.flatMap(k => groups[k]).map(x => ({ 'Raum':x.room, 'Tisch':x.table, 'Typ': x.kind === 'Peripherie' ? (x.label || 'Zubehör') : (KIND_LABEL[x.kind] || x.kind), 'Asset-ID':x.code, 'Zwischenlager':x.lager, 'Zielraum':x.troom, 'Ziel-Tisch':x.ttable, 'Status':st(x),
+    'Abgebaut': x.at && x.room ? new Date(x.at).toLocaleString('de-CH') : '', 'Aufgebaut': x.atAuf ? new Date(x.atAuf).toLocaleString('de-CH') : '' }));
+  const wb = XLSX.utils.book_new();
+  const add = (name, rows, w) => { const ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = Object.keys(rows[0] || {}).map(k => ({ wch: w[k] || 14 })); XLSX.utils.book_append_sheet(wb, ws, name); };
+  add('Tische', T, { 'Raum':16, 'Tisch':7, 'Zubehör':24, 'Asset-IDs':60 });
+  add('Geräte', D, { 'Raum':16, 'Tisch':7, 'Abgebaut':18, 'Aufgebaut':18 });
+  const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+  const name = `Umzug_${(m.name || 'Umzug').replace(/[^\wäöüÄÖÜ.-]+/g, '_')}_${m.date}.xlsx`, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if(mode === 'mail'){
+    const file = new File([out], name, { type:mime });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){ try{ await navigator.share({ files:[file], title:name }); return; }catch(e){ if(e.name === 'AbortError') return; } }
+  }
+  await deliver(name, out, mime, mode === 'mail');
+}
+
+/* ---------- Dauer-Scan (Kamera bleibt offen) für HWLC und Umzug ---------- */
+const CONT_MODES = new Set(['hwlc', 'move']);
+function contScan(code){
+  let sn = '';
+  if(isModemCode(code)) return { ok:false, title:'Modem-Code (IMEI)', sub:'Bitte die Asset-ID scannen' };
+  if(!isAssetCode(code) && !/^zrh/i.test(code)) sn = snOf(code);
+  const c = sn || code;
+  return scan.mode === 'hwlc' ? hwlcAdd(c) : moveAdd(c);
+}
+function contShow(r){
+  const box = $('#scanMsg'); if(!box || !r) return;
+  box.hidden = false;
+  box.className = 'scan-msg ' + (r.ok === true ? 'ok' : r.ok === false ? 'bad' : 'unk');
+  scan.ask = r.ask || null; scan.paused = !!r.ask;
+  box.innerHTML = `${esc(r.title)}${r.sub ? `<small>${esc(r.sub)}</small>` : ''}${r.ask ? `<div class="acts">${r.ask.map(([l], i) => `<button data-act="scanAsk" data-i="${i}">${esc(l)}</button>`).join('')}</div>` : ''}`;
+  try{ navigator.vibrate && navigator.vibrate(r.ok === false ? [80, 60, 80] : 35); }catch(e){}
+  clearTimeout(contShow.t); if(!r.ask) contShow.t = setTimeout(() => { if(!scan.paused) box.hidden = true; }, 2600);
+  contTitle();
+}
+function contTitle(){
+  if(scan.mode === 'hwlc'){ const h = hwlcCur(); if(h){ const n = hwlcCounts(h), S = h.soll || {}; $('#scanTitle').textContent = `Mon ${n.Monitor}${S.mon ? '/' + S.mon : ''} · Host ${n.Host}${S.host ? '/' + S.host : ''} · Dock ${n.Dock}`; } }
+  if(scan.mode === 'move'){ const m = moveCur(), c = m && m.cur || {}; $('#scanTitle').textContent = c.mode === 'auf' ? `Aufbau → ${c.troom}${c.ttable ? ' · T' + c.ttable : ''}` : `${c.room || 'Raum?'}${c.table ? ' · Tisch ' + c.table : ''}`; }
+}
 
 /* ===================== INTRO ===================== */
 /* Karton → Staging → Autositz → Kunde → IMACD. Alles SVG/CSS, läuft offline. */
