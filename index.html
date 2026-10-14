@@ -245,6 +245,15 @@ textarea.notes::placeholder{color:var(--label3)}
 .shelfbtn:active{transform:scale(.92)}
 .shelfbtn svg{width:16px;height:16px}
 .shelfbtn.on{background:var(--plum);border-color:var(--plum);color:#fff}
+#flash{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:30px;text-align:center;color:#fff;opacity:0;pointer-events:none;transition:opacity .2s}
+#flash.show{opacity:1;pointer-events:auto}
+#flash.ok{background:rgba(52,199,89,.96)}#flash.bad{background:rgba(255,59,48,.96)}#flash.unk{background:rgba(255,149,0,.96)}
+#flash .fl-ico{font-size:96px;font-weight:800;line-height:1}
+#flash .fl-t{font-size:28px;font-weight:700}
+#flash .fl-s{font-size:17px;opacity:.95;max-width:340px}
+#flash .fl-h{position:absolute;bottom:calc(env(safe-area-inset-bottom) + 30px);font-size:14px;opacity:.8}
+.tl-gap.near{color:var(--green)}
+.tl-gap svg{flex:none}
 .packno{flex:none;width:22px;height:22px;border-radius:50%;background:var(--fill);color:var(--label2);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;margin-right:-4px}
 .lagerrow.picked .packno{opacity:.5}
 .sublabel{margin:12px 4px 6px;font-size:13px;font-weight:600;color:var(--label2)}
@@ -973,6 +982,7 @@ const ICON = {
   qr: SV('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3M21 14v.01M14 21h3M21 18v3h-1M18 18h.01"/>'),
   close: SV('<path d="M6 6l12 12M18 6L6 18"/>', 2.5),
   bolt: SF('<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>'),
+  walk: SF('<circle cx="13.5" cy="4" r="2"/><path d="M10.2 8.2 7 9.8V14h2v-3l1.3-.6-1.6 8.1L5 17.7l-.4 2 6 1.2 1.1-5.3 2.3 2.2V24h2v-7.2l-2.4-2.3.7-3.3A6.6 6.6 0 0 0 19 14v-2a4.6 4.6 0 0 1-3.9-2.2l-1-1.6a2.2 2.2 0 0 0-2.7-.8z"/>'),
   paste: SV('<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V2.8h6V4M9 11h6M9 15h4"/>')
 };
 
@@ -1016,6 +1026,40 @@ function siteKey(t){
     .match(/([a-z][a-z.\- ]*?(?:strasse|gasse|weg|platz|quai|ring|allee|rain|hof|graben|buehl|matte|acker|halde|steig))\s*(\d{1,4})/);
   return m ? m[1].replace(/\s+/g,'') + ' ' + m[2] : t.address.toLowerCase().replace(/\s+/g,' ').trim();
 }
+
+/* Standorte in der Nähe: Koordinaten über die Adresssuche des Bundes (geo.admin.ch) – nur Strasse + Nr. wird gesendet */
+const GEO_KEY = 'imacd.geo.v1';
+let geoCache = (() => { try{ return JSON.parse(localStorage.getItem(GEO_KEY)) || {}; }catch(e){ return {}; } })();
+const geoBusy = new Set();
+function geoQuery(t){
+  const a = String(t.address || '').replace(/\s+/g, ' ').trim(); if(!a) return '';
+  return /\b8\d{3}\b|zürich|zuerich|winterthur/i.test(a) ? a : a + ' Zürich';
+}
+const geoOf = t => { const q = geoQuery(t); return q && geoCache[q] ? geoCache[q] : null; };
+async function geocodeDay(date){
+  if(state.settings.geoOn === false || !navigator.onLine) return;
+  const qs = [...new Set(state.tickets.filter(t => t.date === date && visible(t)).map(geoQuery).filter(q => q && !(q in geoCache) && !geoBusy.has(q)))];
+  if(!qs.length) return;
+  let changed = false;
+  for(const q of qs){
+    geoBusy.add(q);
+    try{
+      const r = await fetch('https://api3.geo.admin.ch/rest/services/api/SearchServer?type=locations&origins=address&limit=1&sr=4326&searchText=' + encodeURIComponent(q));
+      if(!r.ok) throw 0;
+      const j = await r.json(), a = j.results && j.results[0] && j.results[0].attrs;
+      geoCache[q] = a && a.lat ? { lat:+a.lat, lon:+a.lon } : null; changed = true;
+    }catch(e){ /* offline oder gesperrt – später nochmals */ }
+    geoBusy.delete(q);
+  }
+  if(changed){ try{ localStorage.setItem(GEO_KEY, JSON.stringify(geoCache)); }catch(e){} if(view.tab === 'plan' && view.date === date) renderPlan(); }
+}
+function walkMin(a, b){
+  const A = geoOf(a), B = geoOf(b); if(!A || !B) return null;
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const d = 2 * R * Math.asin(Math.sqrt(Math.sin(r(B.lat - A.lat) / 2) ** 2 + Math.cos(r(A.lat)) * Math.cos(r(B.lat)) * Math.sin(r(B.lon - A.lon) / 2) ** 2));
+  return Math.max(1, Math.round(d * 1.3 / 80));        // Umweg-Faktor 1.3, 80 m pro Minute
+}
+const NEAR_MIN = 5;
 function plan(date){
   const S = state.settings;
   const all = state.tickets.filter(t => t.date === date && visible(t));
@@ -1284,12 +1328,27 @@ function renderPlan(){
       <div><span class="sum-n" style="color:var(--green)">${P.done}/${P.total}</span><span class="sum-l">Erledigt</span></div>
     </div><div class="pbar"><div style="width:${pct}%"></div></div></div>`;
 
+  geocodeDay(view.date);
+  // Standorte in der Nähe (≤ 5 Min. zu Fuss)
+  const near = [];
+  { const seen = {}, list = state.tickets.filter(t => t.date === view.date && visible(t) && !t.done && t.address);
+    list.forEach(t => { const k = siteKey(t); if(!seen[k]) seen[k] = t; });
+    const sites = Object.values(seen);
+    for(let i = 0; i < sites.length; i++) for(let j = i + 1; j < sites.length; j++){
+      const m = walkMin(sites[i], sites[j]); if(m != null && m <= NEAR_MIN) near.push({ a:sites[i], b:sites[j], m });
+    }
+    near.sort((x, y) => x.m - y.m);
+  }
   // Mehrere Tickets am gleichen Standort
-  if(P.multi.length){
+  if(P.multi.length || near.length){
     h += `<div class="group" style="margin-bottom:12px">` + P.multi.map(m => `
       <div class="row ic"><span class="sq" style="--c:var(--indigo)">${ICON.pin}</span>
         <div class="k"><div class="fx1">${m.tickets.length} Tickets am gleichen Standort</div>
-        <div class="fx2 ellip">${esc(m.address)} · ${esc(m.tickets.map(t => t.start || 'flex').join(', '))}</div></div></div>`).join('') + `</div>`;
+        <div class="fx2 ellip">${esc(m.address)} · ${esc(m.tickets.map(t => t.start || 'flex').join(', '))}</div></div></div>`).join('')
+      + near.map(n => `
+      <div class="row ic"><span class="sq" style="--c:var(--green)">${ICON.walk}</span>
+        <div class="k"><div class="fx1">In der Nähe · ca. ${n.m} Min. zu Fuss</div>
+        <div class="fx2 ellip">${esc(n.a.address)} ↔ ${esc(n.b.address)}</div></div></div>`).join('') + `</div>`;
   }
 
   // Material aus dem Lager (vor Tourbeginn oben, danach unten)
@@ -1370,7 +1429,7 @@ function renderPlan(){
         ${t.address?`<a class="btn-tint" href="${mapsUrl(t.address)}" target="_blank" rel="noopener">${ICON.nav}Route</a>`:`<span class="btn-tint dis">${ICON.nav}Route</span>`}
         <button class="btn-tint" style="--c:var(--green)" data-act="done" data-id="${t.id}">${ICON.checkc}Erledigt</button>
       </div>
-      ${after ? `<div class="hnext">Danach: <b>${after.start != null ? fromMin(after.start) : (after.t.start || '–')}</b> ${esc(after.t.title || after.t.ticket || 'Ticket')}${after.t.address ? ' · ' + esc(after.t.address) : ''}</div>` : ''}
+      ${after ? `<div class="hnext">Danach: <b>${after.start != null ? fromMin(after.start) : (after.t.start || '–')}</b> ${esc(after.t.title || after.t.ticket || 'Ticket')}${after.t.address ? ' · ' + esc(after.t.address) : ''}${(() => { if(siteKey(after.t) === siteKey(t)) return ' · <b>gleicher Standort</b>'; const w = walkMin(t, after.t); return w != null && w <= NEAR_MIN ? ` · <b>${w} Min. zu Fuss</b>` : ''; })()}</div>` : ''}
     </div>`;
   } else {
     h += `<div class="card allok"><span class="sq" style="--c:var(--green)">${ICON.check}</span>Alle Tickets erledigt – Feierabend!</div>`;
@@ -1408,12 +1467,14 @@ function renderPlan(){
       }
       prevSite = sk;
       h += tlRow(it.t, it.start, it.end, { now, conflict:!!it.conflict, late:it.late, together:it.together, siteCount: P.sites[sk] ? P.sites[sk].tickets.length : 0 });
-    } else if(it.type === 'travel'){
+    } else if(it.type === 'travel' || it.type === 'free'){
       prevSite = null;
-      h += `<div class="tl-gap">${ICON.car}ca. ${fmtDur(it.end-it.start)} Weg</div>`;
-    } else if(it.type === 'free'){
-      prevSite = null;
-      h += `<div class="tl-gap">${ICON.clock}Frei ${fromMin(it.start)}–${fromMin(it.end)} · ${fmtDur(it.end-it.start)}</div>`;
+      const ix = P.items.indexOf(it), pv = [...P.items.slice(0, ix)].reverse().find(x => x.type === 'ticket'), nx2 = P.items.slice(ix + 1).find(x => x.type === 'ticket');
+      const wm = pv && nx2 && siteKey(pv.t) !== siteKey(nx2.t) ? walkMin(pv.t, nx2.t) : null;
+      const walk = wm != null && wm <= NEAR_MIN ? ` · ${ICON.walk}<b>${wm} Min. zu Fuss</b>` : '';
+      h += it.type === 'travel'
+        ? (walk ? `<div class="tl-gap near">${ICON.walk}In der Nähe · ca. ${wm} Min. zu Fuss</div>` : `<div class="tl-gap">${ICON.car}ca. ${fmtDur(it.end-it.start)} Weg</div>`)
+        : `<div class="tl-gap ${walk ? 'near' : ''}">${ICON.clock}Frei ${fromMin(it.start)}–${fromMin(it.end)} · ${fmtDur(it.end-it.start)}${walk}</div>`;
     }
   }
   if(P.doneFlex.length){
@@ -1507,6 +1568,8 @@ function renderData(){
         </select></div>
     </div>
     <div class="gfoot">«Route» startet direkt die Navigation mit dem Auto zum Standort.</div>
+    <div class="group form" style="margin-top:14px"><div class="row"><label class="k grow" for="sGeo">Standorte in der Nähe zeigen</label><input type="checkbox" class="switch" id="sGeo" data-set="geoOn" ${S.geoOn !== false ? 'checked' : ''}></div></div>
+    <div class="gfoot">Zeigt Termine, die höchstens ${NEAR_MIN} Min. zu Fuss auseinanderliegen. Dafür wird nur die Adresse (Strasse und Nr.) an die Adresssuche des Bundes (geo.admin.ch) geschickt – keine Namen oder Ticketdaten.</div>
 
     <div class="glabel">KI-Erkennung</div>
     <div class="group form">
@@ -1634,7 +1697,7 @@ function openDetail(id){
     <div class="group scanlist">
       ${(t.scans || []).map((sc, i) => `<div class="row">
         <span class="sq" style="--c:var(--${/^(Neues|Altes) Gerät$/.test(sc.what) ? 'green' : /zugeordnet/.test(sc.what) ? 'blue' : 'indigo'})">${sc.what ? ICON.check : ICON.qr}</span>
-        <div class="k"><div class="fx1 ellip">${esc(sc.code)}</div><div class="fx2">${esc(sc.what || 'passt zu keinem Gerät')} · ${new Date(sc.at).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'})}</div></div>
+        <div class="k"><div class="fx1 ellip">${esc(sc.code)}${sc.host ? ` · <span style="color:var(--${sc.check === 'falsch' || /gescannt/.test(sc.what||'') ? 'red' : 'green'})">${esc(sc.host)}</span>` : ''}</div><div class="fx2">${esc(sc.what || 'passt zu keinem Gerät')} · ${new Date(sc.at).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'})}</div></div>
         <button class="callbtn" style="--green:var(--blue)" data-act="copy" data-v="${esc(sc.code)}" aria-label="Kopieren">${ICON.copy}</button>
         <button class="callbtn" style="--green:var(--red)" data-act="delScan" data-id="${t.id}" data-i="${i}" aria-label="Löschen">${ICON.trash}</button>
       </div>`).join('')}
@@ -2234,7 +2297,10 @@ async function openScanner(mode, id){
         if(v.readyState >= 2){
           const res = await det.detect(v);
           const hit = res.find(r => r.rawValue && r.rawValue.trim());
-          if(hit){ $('.scan-frame').classList.add('hit'); setTimeout(() => { closeScanner(); handleScan(hit.rawValue.trim(), hit.format); }, 180); return; }
+          if(hit){
+            let frame = null;
+            try{ frame = document.createElement('canvas'); frame.width = v.videoWidth; frame.height = v.videoHeight; frame.getContext('2d').drawImage(v, 0, 0); }catch(e){ frame = null; }
+            $('.scan-frame').classList.add('hit'); setTimeout(() => { closeScanner(); handleScan(hit.rawValue.trim(), hit.format, frame); }, 180); return; }
         }
       }catch(e){}
       scan.timer = setTimeout(loop, 120);
@@ -2270,7 +2336,50 @@ function codeMatches(t, code){
   if(c.length >= 6 && normCode(t.notes).includes(c)) return 'Notizen';
   return null;
 }
-function handleScan(code, format){
+/* Hostname vom Etikett lesen (QR enthält nur die Asset-Nr.) */
+const isAssetCode = c => /^\d{8,12}$/.test(String(c).trim());
+const hostCanon = h => { h = normCode(h); return h.slice(0, 4) + h.slice(4).replace(/[OQ]/g,'0').replace(/I/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6'); };
+const hostEq = (a, b) => !!a && !!b && hostCanon(a) === hostCanon(b);
+function hostsOf(str){ return String(str || '').split(/[,\s/()]+/).filter(x => /^zrh[a-z][a-z0-9]{3,5}$/i.test(x)).map(x => x.toUpperCase()); }
+function hostsInText(txt){
+  const out = [];
+  String(txt || '').toUpperCase().replace(/[|]/g, 'I').split(/[^A-Z0-9]+/).forEach(tok => {
+    const m = tok.match(/^[Z2]RH([LTEHWI1])([A-Z0-9]{3,5})$/); if(!m) return;
+    const h = 'ZRH' + (/[I1]/.test(m[1]) ? 'L' : m[1]) + m[2];
+    if(!out.includes(h)) out.push(h);
+  });
+  return out;
+}
+async function readHosts(frame){
+  if(!frame) return [];
+  const w = await getWorker();
+  const img = await prepImage(frame);
+  try{ await w.setParameters({ tessedit_pageseg_mode:'11' }); }catch(e){}
+  let txt = '';
+  try{ ({ data:{ text:txt } } = await w.recognize(img)); }catch(e){}
+  try{ await w.setParameters({ tessedit_pageseg_mode:'3' }); }catch(e){}
+  return hostsInText(txt);
+}
+function flash(ok, title, sub){
+  let f = $('#flash');
+  if(!f){ f = document.createElement('div'); f.id = 'flash'; document.body.appendChild(f); f.addEventListener('click', () => f.classList.remove('show')); }
+  f.className = ok === true ? 'ok' : ok === false ? 'bad' : 'unk';
+  f.innerHTML = `<div class="fl-ico">${ok === true ? '✓' : ok === false ? '✕' : '?'}</div><div class="fl-t">${esc(title)}</div>${sub ? `<div class="fl-s">${esc(sub)}</div>` : ''}<div class="fl-h">Tippen zum Schliessen</div>`;
+  requestAnimationFrame(() => f.classList.add('show'));
+  try{ navigator.vibrate && navigator.vibrate(ok === false ? [80,60,80] : 40); }catch(e){}
+  clearTimeout(flash.t); flash.t = setTimeout(() => f.classList.remove('show'), ok === false ? 6000 : 2600);
+}
+// Prüft eine gescannte Asset-Nr. über den Hostnamen auf dem Etikett
+async function hostCheck(code, frame, expected){
+  if(!isAssetCode(code) || !frame) return null;
+  toast('Hostname auf dem Etikett wird gelesen …');
+  let hosts = [];
+  try{ hosts = await readHosts(frame); }catch(e){ return { error: errMsg(e), hosts:[] }; }
+  const hit = hosts.find(h => expected.some(e => hostEq(h, e)));
+  return { hosts, match: hit ? expected.find(e => hostEq(hit, e)) : null };
+}
+function handleScan(code, format, frame){ return handleScanAsync(code, format, frame); }
+async function handleScanAsync(code, format, frame){
   // Ticket-Inhalt im QR (z. B. Kalendereintrag oder Mail-Text)
   if(/BEGIN:VEVENT|Betreff\s*:/i.test(code)){
     const n = addCandidates(textToBlocks(code), $('#scanDate').value || view.date);
@@ -2278,49 +2387,79 @@ function handleScan(code, format){
   }
   if(scan.mode === 'old' || scan.mode === 'new'){
     const t = state.tickets.find(x => x.id === scan.id); if(!t) return;
-    const m = codeMatches(t, code), label = scan.mode === 'old' ? 'Altes Gerät' : 'Neues Gerät';
+    const mode = scan.mode, label = mode === 'old' ? 'Altes Gerät' : 'Neues Gerät';
+    let m = codeMatches(t, code), host = '';
     if((t.scans || []).some(x => normCode(x.code) === normCode(code))){ toast('Dieser Code ist schon gespeichert'); openFinish(t.id); return; }
-    (t.scans ||= []).push({ code, what: m === label ? label : label + ' (gescannt)', at: new Date().toISOString() });
+    const exp = hostsOf(mode === 'old' ? t.oldDevice : t.newDevice);
+    if(!m && exp.length && isAssetCode(code)){
+      const r = await hostCheck(code, frame, exp);
+      if(r && r.match){ m = label; host = r.match; flash(true, `${r.match} stimmt`, `${label} · Asset ${code}`); }
+      else if(r && r.hosts.length){ host = r.hosts[0]; flash(false, 'Falsches Gerät?', `Etikett: ${r.hosts.join(', ')} · Ticket: ${exp.join(', ')}`); }
+      else flash(null, 'Hostname nicht lesbar', 'Asset gespeichert – Hostname bitte selbst prüfen');
+    } else if(m === label) flash(true, `${label} stimmt`, code);
+    (t.scans ||= []).push({ code, host, what: m === label ? label : label + ' (gescannt)', check: m === label ? 'ok' : host ? 'falsch' : '', at: new Date().toISOString() });
     save(); openFinish(t.id);
-    toast(m === label ? `✓ ${label} stimmt mit Ticket überein` : `${label}: ${code} gespeichert`);
     return;
   }
   if(scan.mode === 'ticket'){
     const t = state.tickets.find(x => x.id === scan.id); if(!t) return;
-    const what = codeMatches(t, code);
+    let what = codeMatches(t, code), host = '', readInfo = '';
+    if(!what && isAssetCode(code)){
+      const nh = hostsOf(t.newDevice), oh = hostsOf(t.oldDevice);
+      if(nh.length || oh.length){
+        const r = await hostCheck(code, frame, [...nh, ...oh]);
+        if(r && r.match){ host = r.match; what = nh.includes(r.match) ? 'Neues Gerät' : 'Altes Gerät'; }
+        else if(r && r.hosts.length){ host = r.hosts[0]; readInfo = `Etikett: ${r.hosts.join(', ')} – passt nicht zum Ticket (${[...nh, ...oh].join(', ')})`; flash(false, 'Falsches Gerät?', readInfo); }
+        else readInfo = 'Hostname auf dem Etikett nicht lesbar.';
+      }
+    }
     if(what){
-      (t.scans ||= []).push({ code, what, at: new Date().toISOString() });
+      (t.scans ||= []).push({ code, host, what, check:'ok', at: new Date().toISOString() });
       save(); openDetail(t.id);
-      toast(what === 'Neues Gerät' || what === 'Altes Gerät' ? `✓ ${what} stimmt` : `✓ Passt zu: ${what}`);
+      flash(true, what === 'Neues Gerät' || what === 'Altes Gerät' ? `${what} stimmt` : `Passt zu: ${what}`, host ? `${host} · Asset ${code}` : code);
       return;
     }
     // Unbekannt (z. B. Asset-Nr. auf dem Etikett, im Ticket steht der Hostname) → zuordnen
     showSheet(`<div class="grabber"></div>
       <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Gescannt</div><span></span></div>
       <div class="group" style="margin-top:8px"><div class="row stack"><div class="k">${/^\d{8,12}$/.test(code) ? 'Asset-Nr.' : 'Code'}</div><div class="v" style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums">${esc(code)}</div></div></div>
-      <div class="gfoot">Dieser Code steht nicht im Ticket. Welches Gerät ist das?</div>
+      ${host ? `<div class="group"><div class="row stack"><div class="k">Hostname auf Etikett</div><div class="v" style="font-weight:600;color:var(--red)">${esc(host)}</div></div></div>` : ''}
+      <div class="gfoot">${readInfo ? esc(readInfo) + ' ' : ''}Dieser Code steht nicht im Ticket. Welches Gerät ist das?</div>
       <div class="group" style="margin-top:16px">
-        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-w="Neues Gerät"><span class="k blue">Neues Gerät${t.newDevice ? ' ('+esc(t.newDevice)+')' : ''}</span></div>
-        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-w="Altes Gerät"><span class="k blue">Altes Gerät${t.oldDevice ? ' ('+esc(t.oldDevice.split(' ')[0])+')' : ''}</span></div>
+        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-h="${esc(host)}" data-w="Neues Gerät"><span class="k blue">Neues Gerät${t.newDevice ? ' ('+esc(t.newDevice)+')' : ''}</span></div>
+        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-h="${esc(host)}" data-w="Altes Gerät"><span class="k blue">Altes Gerät${t.oldDevice ? ' ('+esc(t.oldDevice.split(' ')[0])+')' : ''}</span></div>
         <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-w=""><span class="k blue">Nur speichern</span></div>
       </div>`, 'scanassign');
     return;
   }
   // Suche: heutiger Tag zuerst, dann alle
   const order = [...state.tickets.filter(t => t.date === view.date), ...state.tickets.filter(t => t.date !== view.date)];
-  const found = order.map(t => ({ t, what: codeMatches(t, code) })).filter(x => x.what);
+  let found = order.map(t => ({ t, what: codeMatches(t, code) })).filter(x => x.what), fHost = '', fHosts = [];
+  if(!found.length && isAssetCode(code) && frame){
+    const all = order.flatMap(t => [...hostsOf(t.newDevice), ...hostsOf(t.oldDevice)]);
+    const r = await hostCheck(code, frame, all);
+    if(r) fHosts = r.hosts;
+    if(r && r.match){
+      fHost = r.match;
+      found = order.filter(t => hostsOf(t.newDevice).includes(r.match) || hostsOf(t.oldDevice).includes(r.match))
+        .map(t => ({ t, what: hostsOf(t.newDevice).includes(r.match) ? 'Neues Gerät' : 'Altes Gerät' }));
+    }
+  }
   if(found.length){
     const { t, what } = found[0];
-    (t.scans ||= []).push({ code, what, at: new Date().toISOString() }); save();
+    if(!(t.scans || []).some(x => normCode(x.code) === normCode(code))) (t.scans ||= []).push({ code, host: fHost, what, check:'ok', at: new Date().toISOString() });
+    save();
     if(t.date !== view.date){ view.date = t.date; renderPlan(); }
-    openDetail(t.id); toast(`✓ ${what} von ${t.ticket || 'Auftrag ' + t.orderId}`);
+    openDetail(t.id);
+    flash(true, `${fHost || what} – ${t.shelf ? 'Regal ' + t.shelf : what}`, `${t.ticket || 'Auftrag ' + t.orderId}${t.start ? ' · ' + t.start : ''}`);
     return;
   }
   const isUrl = /^https?:\/\//i.test(code);
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><span></span><div class="sh-title">Gescannt</div><button class="txtbtn bold" data-act="closeSheet">Fertig</button></div>
     <div class="group" style="margin-top:8px"><div class="row stack"><div class="k">${esc(format || 'Code')}</div><div class="v" style="font-variant-numeric:tabular-nums">${esc(code)}</div></div></div>
-    <div class="gfoot">Kein Ticket mit diesem Code gefunden.</div>
+    ${fHosts.length ? `<div class="group"><div class="row stack"><div class="k">Hostname auf Etikett</div><div class="v" style="font-weight:600">${esc(fHosts.join(', '))}</div></div></div>` : ''}
+    <div class="gfoot">Kein Ticket mit diesem ${fHosts.length ? 'Hostnamen' : 'Code'} gefunden.</div>
     <div class="group" style="margin-top:16px">
       <div class="row tap" data-act="copy" data-v="${esc(code)}"><span class="k blue">Kopieren</span></div>
       ${isUrl ? `<a class="row tap" href="${esc(code)}" target="_blank" rel="noopener"><span class="k blue">Link öffnen</span></a>` : ''}
@@ -2361,7 +2500,7 @@ function inventoryRows(range){
     const oldDesc = t.oldDevice || '';
     const oldHost = (t.oldDevice || '').match(/\bzrh[lehtw][a-z0-9]{3,5}\b/i), oldAsset = (t.oldDevice || '').match(/\b\d{8,12}\b/);
     // Alte Geräte (Rücknahme)
-    if(oldScans.length) oldScans.forEach((x, i) => add('Alt (zurück)', x.code, oldDesc, true, i === 0 && oldHost && /^\d+$/.test(x.code) ? oldHost[0] : ''));
+    if(oldScans.length) oldScans.forEach((x, i) => add('Alt (zurück)', x.code, oldDesc, true, x.host || (i === 0 && oldHost && /^\d+$/.test(x.code) ? oldHost[0] : '')));
     else if(t.oldDevice) add('Alt (zurück)', oldAsset ? oldAsset[0] : oldHost ? oldHost[0] : '', oldDesc, false);
     // Neue Geräte (ausgeliefert)
     const newCodes = split(t.newDevice);
@@ -2369,7 +2508,7 @@ function inventoryRows(range){
     const newHosts = newCodes.filter(c => /^zrh/i.test(c));
     let usedHost = null;
     if(newScans.length) newScans.forEach((x, i) => {
-      const h = i === 0 && /^\d+$/.test(x.code) && newHosts.length === 1 ? newHosts[0] : '';
+      const h = x.host || (i === 0 && /^\d+$/.test(x.code) && newHosts.length === 1 ? newHosts[0] : '');
       if(h) usedHost = h;
       add('Neu (ausgeliefert)', x.code, mat, true, h);
     });
@@ -2511,7 +2650,7 @@ document.addEventListener('click', e => {
     case 'newBrand': { const t = state.tickets.find(x => x.id === id); if(!t) break; t.newBrand = t.newBrand === b.dataset.v ? '' : b.dataset.v; save(); renderPlan(); openDetail(id); break; }
     case 'assignScan': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
-      (t.scans ||= []).push({ code: b.dataset.v, what: b.dataset.w ? b.dataset.w + ' (zugeordnet)' : '', at: new Date().toISOString() });
+      (t.scans ||= []).push({ code: b.dataset.v, host: b.dataset.h || '', what: b.dataset.w ? b.dataset.w + ' (zugeordnet)' : '', at: new Date().toISOString() });
       save(); openDetail(id); toast(b.dataset.w ? `${b.dataset.w}: ${b.dataset.v} gespeichert` : 'Gespeichert'); break;
     }
     case 'delScan': { const t = state.tickets.find(x => x.id === id); if(t && t.scans){ t.scans.splice(+b.dataset.i, 1); save(); openDetail(id); } break; }
@@ -2596,6 +2735,7 @@ document.addEventListener('change', e => {
   if(id === 'dayInput' && e.target.value){ view.date = e.target.value; renderPlan(); return; }
   const k = e.target.dataset && e.target.dataset.set;
   if(k === 'nav'){ state.settings.nav = e.target.value; save(); renderPlan(); toast('Gespeichert'); return; }
+  if(k === 'geoOn'){ state.settings.geoOn = e.target.checked; save(); renderPlan(); toast(e.target.checked ? 'Nähe-Anzeige an' : 'Nähe-Anzeige aus'); return; }
   if(k === 'aiOn' || k === 'aiKey' || k === 'aiModel' || k === 'gemKey' || k === 'gemModel'){
     state.settings[k] = k === 'aiOn' ? e.target.checked : e.target.value.trim();
     save(); renderScan();
