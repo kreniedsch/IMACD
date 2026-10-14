@@ -365,6 +365,8 @@ nav.tabs button.on{color:var(--blue)}
 .toast{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translate(-50%,-24px);opacity:0;transition:opacity .25s,transform .3s cubic-bezier(.2,.85,.25,1);background:var(--bar);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);color:var(--label);padding:11px 18px;border-radius:18px;font-size:15px;font-weight:500;line-height:1.3;box-shadow:0 8px 30px rgba(0,0,0,.16);z-index:70;width:max-content;max-width:min(340px,92vw);text-align:center;pointer-events:none}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 /* HWLC & Umzug */
+.sec-acts{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
+.sec-acts>span{font-size:22px;font-weight:700;letter-spacing:-.01em}
 .cnt{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:12px 0 0}
 .cnt .card{margin:0;padding:12px 14px}
 .cnt small{color:var(--label2);font-size:13px}
@@ -420,6 +422,8 @@ nav.tabs button.on{color:var(--blue)}
     <div class="week" id="week"></div>
     <div class="chips" id="groupChips"></div>
     <div id="planBody"></div>
+    <div id="tab-hwlc" hidden></div>
+    <div id="tab-move" hidden></div>
   </section>
 
   <section id="tab-scan" hidden>
@@ -447,8 +451,6 @@ nav.tabs button.on{color:var(--blue)}
     <div class="gfoot" id="scanFoot" style="margin-top:24px;text-align:center"></div>
   </section>
 
-  <section id="tab-hwlc" hidden></section>
-  <section id="tab-move" hidden></section>
   <section id="tab-data" hidden></section>
 </main>
 
@@ -1367,7 +1369,14 @@ function tlRow(t, start, end, opt={}){
   </div>`;
 }
 
-function renderPlan(){
+function renderPlan(){ renderPlanCore(); syncPlanSec(); }
+function syncPlanSec(){
+  const sec = planSec();
+  $('#planBody').hidden = sec !== 'plan'; $('#tab-hwlc').hidden = sec !== 'hwlc'; $('#tab-move').hidden = sec !== 'move';
+  if(sec === 'hwlc') renderHwlc();
+  if(sec === 'move') renderMove();
+}
+function renderPlanCore(){
   const isToday = view.date === iso(new Date());
   $('#planTitle').textContent = relDay(view.date);
   $('#planEyebrow').textContent = eyebrowDate(view.date);
@@ -1695,7 +1704,7 @@ function renderData(){
     </div></div></div>`;
 }
 
-function renderAll(){ renderPlan(); renderScan(); if(view.tab === 'data') renderData(); if(curSec() === 'hwlc') renderHwlc(); if(curSec() === 'move') renderMove(); }
+function renderAll(){ renderPlan(); renderScan(); if(view.tab === 'data') renderData(); }
 
 // Tagesplan zeigt je nach «Mein Kalender» den Plan, HWLC oder Umzug
 const planSec = () => viewGroup() === 'HWLC' ? 'hwlc' : viewGroup() === 'Umzug' ? 'move' : 'plan';
@@ -1703,11 +1712,8 @@ const curSec = () => view.tab === 'plan' ? planSec() : view.tab;
 function setTab(tab){
   view.tab = tab;
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  const sec = curSec();
-  ['plan','hwlc','move','scan','data'].forEach(t => $('#tab-'+t).hidden = t !== sec);
-  if(sec === 'plan') renderPlan();
-  if(sec === 'hwlc') renderHwlc();
-  if(sec === 'move') renderMove();
+  ['plan','scan','data'].forEach(t => $('#tab-'+t).hidden = t !== tab);
+  if(tab === 'plan') renderPlan();
   if(tab === 'scan') $('#scanDate').value = view.date;
   renderScan();
   if(tab === 'data') renderData();
@@ -2962,7 +2968,7 @@ document.addEventListener('click', e => {
       scan.last = ''; break;
     }
     /* --- HWLC --- */
-    case 'hwlcPick': state.settings.hwlcKey = b.dataset.k; state.settings.hwlcSheet = ''; save(); renderHwlc(); break;
+    case 'hwlcPick': { state.settings.hwlcKey = b.dataset.k; state.settings.hwlcSheet = ''; const h = state.hwlc[b.dataset.k]; if(h) view.date = h.date; save(); renderPlan(); break; }
     case 'hwlcMode': state.settings.hwlcMode = b.dataset.v; save(); renderHwlc(); break;
     case 'hwlcSheet': state.settings.hwlcSheet = b.dataset.v; save(); renderHwlc(); break;
     case 'hwlcScan': if(!hwlcCur()){ toast('Zuerst Kalender importieren oder Tranche anlegen'); break; } openScanner('hwlc'); break;
@@ -2987,7 +2993,7 @@ document.addEventListener('click', e => {
       state.hwlc ||= {};
       state.hwlc[key] = { ...(state.hwlc[key] || {}), key, da, extra:'', date:d, time:'', title:key, ort:'', kontakt:'', spez:'', rows:[], notes:[], places:[],
         soll:{ mon: mon ? +mon : null, host: host ? +host : null, lief:0 }, items:(state.hwlc[key] || {}).items || [] };
-      state.settings.hwlcKey = key; save(); closeSheet(); renderHwlc(); break;
+      state.settings.hwlcKey = key; view.date = d; save(); closeSheet(); renderPlan(); break;
     }
     case 'hwlcDelTranche': {
       const h = hwlcCur(); if(!h) break;
@@ -3333,7 +3339,11 @@ function hwlcImport(ics){
 const hwlcList = () => Object.values(state.hwlc || {}).sort((a, b) => (b.date + b.key).localeCompare(a.date + a.key));
 function hwlcCur(){
   const L = hwlcList(); if(!L.length) return null;
-  return (state.settings.hwlcKey && state.hwlc[state.settings.hwlcKey]) || L.find(h => h.date === iso(new Date()) && !h.extra) || L[0];
+  const sel = state.settings.hwlcKey && state.hwlc[state.settings.hwlcKey];
+  if(sel && sel.date === view.date) return sel;
+  const onDay = L.filter(h => h.date === view.date);
+  if(onDay.length) return onDay.find(h => !h.extra) || onDay[0];
+  return sel || L.find(h => h.date === iso(new Date()) && !h.extra) || L[0];
 }
 function hwlcCounts(h){
   const c = { Monitor:0, Dock:0, Host:0, neu:0, wieder:0 };
@@ -3362,8 +3372,7 @@ function meter(ist, soll){
 function renderHwlc(){
   const el = $('#tab-hwlc'); if(!el) return;
   const L = hwlcList(), h = hwlcCur();
-  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Tagesplan · Kalender HWLC</div><h1>HWLC</h1></div>
-    <div class="lt-r"><button class="circle" data-act="hwlcNew" aria-label="Tranche anlegen">${ICON.plus}</button></div></div>`;
+  const head = `<div class="sec-acts"><span>HWLC-Rücknahme</span><button class="pillbtn" data-act="hwlcNew">+ Tranche</button></div>`;
   if(!h){
     el.innerHTML = head + `<div class="empty"><h3>Keine Tranche</h3><p>Kalender (.ics) unter «Erfassen» importieren. Die HWLC-Tranche mit Dienstabteilung, Datum und Anzahl Geräte wird automatisch erkannt.</p>
       <button class="btn-fill" data-act="hwlcNew">${ICON.plus}Tranche von Hand anlegen</button></div>`;
@@ -3589,8 +3598,7 @@ const statusBadge = x => x.status === 'auf' ? `<span class="badge green">→ ${e
 function renderMove(){
   const el = $('#tab-move'); if(!el) return;
   const M = state.moves || [], m = moveCur();
-  const head = `<div class="lt"><div class="lt-l"><div class="eyebrow">Tagesplan · Kalender Umzug</div><h1>Umzug</h1></div>
-    <div class="lt-r"><button class="circle" data-act="moveNew" aria-label="Neuer Umzug">${ICON.plus}</button></div></div>`;
+  const head = `<div class="sec-acts"><span>Umzug</span><button class="pillbtn" data-act="moveNew">+ Umzug</button></div>`;
   const withAtt = state.tickets.filter(t => (t.attach || []).length || /umzug|begehung|\bmove\b/i.test(t.title + ' ' + (t.raw || '').split('\n')[0]))
     .sort((a, b) => (b.date + (b.start || '')).localeCompare(a.date + (a.start || ''))).slice(0, 6);
   const termine = withAtt.length ? `<div class="glabel">Umzugs-Termine & Anhänge</div><div class="group">${withAtt.map(t => `<div class="row tap" data-act="detail" data-id="${t.id}"><span class="k ellip">${esc((String(t.raw || '').split('\n')[0].replace(/^Betreff:\s*/, '').replace(/^[A-ZÄÖÜ]+\s*--\s*/, '') || t.title || t.ticket || 'Termin').slice(0, 90))}<br><small style="color:var(--label2)">${esc(longDate(t.date))}${t.start ? ' · ' + esc(t.start) : ''}</small></span>${(t.attach || []).length ? `<span class="badge">${ICON.paste.replace('<svg', '<svg width="12" height="12"')} ${t.attach.length}</span>` : ''}<span class="chev">${ICON.chev}</span></div>`).join('')}</div>` : '';
