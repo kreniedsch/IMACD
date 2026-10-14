@@ -1918,9 +1918,10 @@ function openMissing(range){
       </div>`).join('') : '<div class="row"><span class="k" style="color:var(--green);font-weight:600">Alles gescannt ✓</span></div>'}</div>`, 'missing');
 }
 const needsOldScan = t => !!(t.oldDevice || /austausch|abbau|abholung|r(ü|ue)ckbau/i.test(t.kind || ''));
+const needsNewScan = t => !needsOldScan(t) && !!(t.newDevice || /lieferung|aufbau|install|rollout|umzug|z(ü|ue)gel|ausliefern/i.test(t.kind || ''));
 function toggleDone(id, force){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
-  if(!t.done && !force && needsOldScan(t)){ openFinish(id); return; }
+  if(!t.done && !force && (needsOldScan(t) || needsNewScan(t))){ openFinish(id); return; }
   t.done = !t.done; if(t.done) t.doneAt = new Date().toISOString();
   save(); renderPlan();
   if(t.done && view.tab === 'plan' && !(sheetMode||'').endsWith(id)){ window.scrollTo({ top:0, behavior:'smooth' }); toast('Erledigt – nächstes Ticket oben'); }
@@ -1931,22 +1932,24 @@ function openFinish(id){
   const sc = t.scans || [];
   const list = sc.map(x => `<div class="row"><span class="sq" style="--c:var(--${/^Alt/.test(x.what) ? 'orange' : /^Neu/.test(x.what) ? 'green' : 'indigo'})">${ICON.qr}</span>
       <div class="k"><div class="fx1">${esc(x.code)}${x.host ? ' · ' + esc(x.host) : ''}</div><div class="fx2">${esc((x.what || 'gescannt') + (isSnScan(x) ? ' · Seriennr. – Asset-ID nachschlagen' : '') + (x.manual ? ' · von Hand' : ''))}</div></div></div>`).join('');
-  const oldCount = sc.filter(x => /^Alt/.test(x.what)).length;
+  const oldCount = sc.filter(x => /^Alt/.test(x.what)).length, newCount = sc.filter(x => /^Neu/.test(x.what)).length, isOld = needsOldScan(t);
   showSheet(`<div class="grabber"></div>
     <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Abschliessen</div><span></span></div>
     <div class="det" style="--c:var(--${t.flex?'teal':'orange'})"><h2 style="font-size:20px">${esc(t.title || t.ticket)}</h2>
       <div class="when">${esc([t.ticket || (t.orderId && 'Auftrag '+t.orderId), t.address].filter(Boolean).join(' · '))}</div></div>
     ${t.oldDevice ? `<div class="gfoot" style="margin:10px 0 0">Altes Gerät laut Ticket: <b>${esc(t.oldDevice)}</b></div>` : ''}
+    ${t.newDevice ? `<div class="gfoot" style="margin:10px 0 0">Neues Gerät laut Ticket: <b>${esc(t.newDevice)}</b></div>` : ''}
     <div class="glabel">Gescannt</div>
     <div class="group">${list || '<div class="row"><span class="k" style="color:var(--label2)">Noch nichts gescannt</span></div>'}</div>
-    <button class="btn-fill" style="width:100%;margin-top:16px;--blue:var(--orange);background:var(--orange)" data-act="scanOld" data-id="${t.id}">${ICON.qr}${oldCount ? 'Weiteres altes Gerät scannen' : 'QR altes Gerät scannen'}</button>
-    <button class="btn-tint" style="width:100%;margin-top:10px;--c:var(--green)" data-act="scanNew" data-id="${t.id}">${ICON.qr}Neues Gerät scannen (optional)</button>
+    ${isOld ? `<button class="btn-fill" style="width:100%;margin-top:16px;--blue:var(--orange);background:var(--orange)" data-act="scanOld" data-id="${t.id}">${ICON.qr}${oldCount ? 'Weiteres altes Gerät scannen' : 'QR altes Gerät scannen'}</button>
+    <button class="btn-tint" style="width:100%;margin-top:10px;--c:var(--green)" data-act="scanNew" data-id="${t.id}">${ICON.qr}Neues Gerät scannen (optional)</button>`
+    : `<button class="btn-fill" style="width:100%;margin-top:16px;--blue:var(--green);background:var(--green)" data-act="scanNew" data-id="${t.id}">${ICON.qr}${newCount ? 'Weiteres neues Gerät scannen' : 'QR neues Gerät scannen'}</button>`}
     <div class="glabel">Ohne Etikett? Von Hand eintragen</div>
     <div class="group form"><div class="row"><input id="manOld" placeholder="Asset-ID, Seriennr. (SN#) oder Hostname" autocapitalize="characters" autocomplete="off" spellcheck="false" style="text-align:left"><button class="txtbtn bold" data-act="manOld" data-id="${t.id}">Hinzufügen</button></div></div>
-    <div class="gfoot">Seriennummer steht unten am Gerät neben «SN#». Die Asset-ID suchst du später am PC damit heraus.</div>
+    <div class="gfoot">Seriennummer steht unten am Gerät neben «SN#». Die Asset-ID suchst du später am PC damit heraus.${isOld ? '' : ' Wird als neues Gerät gespeichert.'}</div>
     ${noteHtml(t)}
     <div class="group" style="margin-top:20px">
-      <div class="row tap" data-act="finishDone" data-id="${t.id}"><span class="k blue" style="font-weight:600">${oldCount ? 'Fertig – als erledigt markieren' : 'Ohne Scan als erledigt markieren'}</span></div>
+      <div class="row tap" data-act="finishDone" data-id="${t.id}"><span class="k blue" style="font-weight:600">${(isOld ? oldCount : newCount) ? 'Fertig – als erledigt markieren' : 'Ohne Scan als erledigt markieren'}</span></div>
     </div>`, 'finish:'+id);
 }
 
@@ -2707,7 +2710,7 @@ document.addEventListener('click', e => {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       const v = ($('#manOld').value || '').trim().toUpperCase().replace(/^SN#?\s*/,''); if(!v){ toast('Bitte Asset-ID, Seriennr. oder Hostname eingeben'); break; }
       const sn = !isAssetCode(v) && !/^ZRH/.test(v) ? (snOf(v) || v) : '';
-      (t.scans ||= []).push({ code: sn || v, sn, host: /^ZRH/.test(v) ? v : '', what:'Altes Gerät', manual:true, at: new Date().toISOString() });
+      (t.scans ||= []).push({ code: sn || v, sn, host: /^ZRH/.test(v) ? v : '', what: needsOldScan(t) ? 'Altes Gerät' : 'Neues Gerät', manual:true, at: new Date().toISOString() });
       save(); openFinish(id); toast(sn ? `Seriennr. ${sn} gespeichert – Asset-ID später nachschlagen` : `${v} gespeichert`); break;
     }
     case 'cnTest': {
