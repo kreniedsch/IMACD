@@ -2902,7 +2902,7 @@ document.addEventListener('change', e => {
 })();
 
 setInterval(() => { if(view.tab === 'plan') renderPlan(); }, 60000);
-document.addEventListener('visibilitychange', () => { if(!document.hidden && view.tab === 'plan') renderPlan(); });
+document.addEventListener('visibilitychange', () => { if(!document.hidden){ if(view.tab === 'plan') renderPlan(); maybeIntro(); } });
 
 
 document.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = ICON[el.dataset.icon] || '');
