@@ -757,7 +757,7 @@ function outlookEnhance(t, lines, text){
       if(new RegExp('^'+TICKET_RE.source+'$','i').test(sg)) continue;
       const od = sg.match(/^(austausch|abbau|abholung|r(?:ü|ue)ckbau|ersatz|entsorgung)\s*:?\s*(.+)$/i);
       if(od){
-        let parts = od[2].replace(/\s\d{5,}\b/g,'').split(/\s*(?:=\s?>|-\s?>|→|»|=)\s*/);
+        let parts = od[2].replace(/\s(?!\d{8,12}\b)\d{5,}\b/g,'').split(/\s*(?:=\s?>|-\s?>|→|»|=)\s*/);
         if(parts.length < 2){
           const BR = /\b(Lenovo|HP|Dell|Apple|Samsung|Logitech|Jabra|Fujitsu|Microsoft|Philips|Eizo|Poly|Yealink)\b/g;
           const hits = [...od[2].matchAll(BR)];
@@ -782,7 +782,7 @@ function outlookEnhance(t, lines, text){
       if(/^(am besten|bitte|evtl|ggf|hinweis)/i.test(sg)) t.notes = (t.notes ? t.notes+'\n' : '') + 'Hinweis: ' + sg;
     }
     const km = betreff.match(new RegExp(KIND_RE.source + '\\s*:\\s*([^/]+)', 'i'));
-    if(km) betreffTitle = (km[1][0].toUpperCase() + km[1].slice(1) + ': ' + km[2].replace(/\s\d{5,}\b/g,'')).replace(/\s*--\s*/g,' – ').trim();
+    if(km) betreffTitle = (km[1][0].toUpperCase() + km[1].slice(1) + ': ' + km[2].replace(/\s(?!\d{8,12}\b)\d{5,}\b/g,'')).replace(/\s*--\s*/g,' – ').trim();
     if(km && t.oldDevice && t.material) betreffTitle = km[1][0].toUpperCase() + km[1].slice(1) + ': ' + t.oldDevice + ' → ' + t.material.replace(/^\d+x\s/,'');
   }
 
@@ -2407,7 +2407,10 @@ function codeMatches(t, code){
   if(normCode(t.ticket) === c) return 'Ticket';
   if(parts('orderId').includes(c)) return 'Auftrag';
   if(parts('devices').includes(c)) return 'Gerät';
-  if(c.length >= 6 && normCode(t.notes).includes(c)) return 'Notizen';
+  if(c.length >= 6 && normCode(t.notes).includes(c)){
+    const nb = String(t.notes || ''), km = nb.match(/(austausch|abbau|abholung|r(ü|ue)ckbau)\s*:/i);       // steht im Betreff nach «Austausch:» → altes Gerät
+    return km && normCode(nb.slice(km.index)).includes(c) ? 'Altes Gerät' : 'Gerät';
+  }
   return null;
 }
 /* Seriennummer / Modem-Code erkennen (gelaserter Data-Matrix-Code auf dem Gerät) */
@@ -2607,6 +2610,22 @@ function deviceType(code, desc){
   if(/^(32|72)\d{8}$/.test(code || '')) return 'Host';
   return 'Peripherie';
 }
+const ST_ALT = 'Alt (zurück)', ST_NEU = 'Neu (ausgeliefert)';
+/* Status eines Scans – nur «Alt (zurück)» oder «Neu (ausgeliefert)», sonst '' (unklar) */
+function scanStatus(t, x){
+  if(/^Alt/.test(x.what || '')) return ST_ALT;
+  if(/^Neu/.test(x.what || '')) return ST_NEU;
+  const c = normCode(x.code), has = f => String(t[f] || '').split(/[,\s/]+/).map(normCode).includes(c);
+  if(c.length >= 4){
+    if(has('oldDevice')) return ST_ALT;
+    if(has('newDevice')) return ST_NEU;
+    const nb = String(t.notes || ''), km = nb.match(/(austausch|abbau|abholung|r(ü|ue)ckbau)\s*:/i);
+    if(km && normCode(nb.slice(km.index)).includes(c)) return ST_ALT;
+  }
+  const o = needsOldScan(t);
+  return o ? (!t.newDevice && !t.material ? ST_ALT : '') : needsNewScan(t) ? ST_NEU : '';   // Austausch mit unbekanntem Code → unklar
+}
+const statusOk = st => st === ST_ALT || st === ST_NEU;
 function inventoryRows(range){
   const today = iso(new Date()), ws = weekStart(today);
   const inRange = t => range === 'day' ? t.date === view.date : range === 'week' ? (t.date >= ws && t.date <= addDays(ws, 6)) : true;
@@ -2616,19 +2635,19 @@ function inventoryRows(range){
     const base = { 'Datum': t.date.split('-').reverse().join('.'), 'Incident/WO': t.ticket || '', 'Auftrag': t.orderId || (t.free ? 'kostenlos' : ''),
       'Art': t.kind || '', 'Standort': t.address || '', 'Etage/Büro': t.room || '', 'Kontakt': t.contact || '',
       'Erledigt': t.done ? 'Ja' : 'Nein', 'Notiz': t.done ? noteText(t) : '' };
-    const add = (status, code, desc, scanned, host) => {
+    const add = (status, code, desc, scanned, host, si) => {
       const isAsset = /^\d{8,12}$/.test(code), isHost = /^zrh[lehtw][a-z0-9]{3,5}$/i.test(code), sn = !isAsset && !isHost ? snOf(code) : '';
       rows.push({ ...base, 'Typ': deviceType(isHost ? code : host || code, desc), 'Status': status,
         'Asset-ID': isAsset ? code : '', 'Hostname': (isHost ? code : host || '').toUpperCase(), 'Seriennr.': sn, 'Code (anderer)': !isAsset && !isHost && !sn ? code : '',
         'Hinweis': sn && /^Alt/.test(status) ? 'Asset-ID nachschlagen' : '',
-        'Beschreibung': desc || '', 'Gescannt': scanned ? 'Ja' : 'Nein' });
+        'Beschreibung': desc || '', 'Gescannt': scanned ? 'Ja' : 'Nein', _tid: t.id, _si: si });
     };
     const scans = t.scans || [];
     const oldScans = scans.filter(x => /^Alt/.test(x.what)), newScans = scans.filter(x => /^Neu/.test(x.what));
     const oldDesc = t.oldDevice || '';
     const oldHost = (t.oldDevice || '').match(/\bzrh[lehtw][a-z0-9]{3,5}\b/i), oldAsset = (t.oldDevice || '').match(/\b\d{8,12}\b/);
     // Alte Geräte (Rücknahme)
-    if(oldScans.length) oldScans.forEach((x, i) => add('Alt (zurück)', x.code, oldDesc, true, x.host || (i === 0 && oldHost && (/^\d+$/.test(x.code) || isSnScan(x)) ? oldHost[0] : '')));
+    if(oldScans.length) oldScans.forEach((x, i) => add(ST_ALT, x.code, oldDesc, true, x.host || (i === 0 && oldHost && (/^\d+$/.test(x.code) || isSnScan(x)) ? oldHost[0] : ''), scans.indexOf(x)));
     else if(t.oldDevice) add('Alt (zurück)', oldAsset ? oldAsset[0] : oldHost ? oldHost[0] : '', oldDesc, false);
     // Neue Geräte (ausgeliefert)
     const newCodes = split(t.newDevice);
@@ -2643,14 +2662,29 @@ function inventoryRows(range){
     newCodes.filter(c => c !== usedHost && !newScans.some(x => normCode(x.code) === normCode(c))).forEach(c => add('Neu (ausgeliefert)', c, mat, false));
     if(!newCodes.length && !newScans.length && mat) add('Neu (ausgeliefert)', '', mat, false);
     // Sonstige Scans
-    scans.filter(x => !/^(Alt|Neu)/.test(x.what)).forEach(x => add(x.what || 'Gescannt', x.code, '', true));
+    scans.forEach((x, i) => {
+      if(/^(Alt|Neu|Ticket|Auftrag)/.test(x.what || '')) return;                 // Ticket-/Auftrags-Codes sind keine Geräte
+      const st = scanStatus(t, x);
+      add(st, x.code, st === ST_ALT ? oldDesc : st === ST_NEU ? mat : '', true, x.host || '', i);
+    });
   }
   return rows;
 }
 let exportRange = 'day', pendingShare = null;
+function warnStatus(range){
+  const bad = inventoryRows(range).filter(r => !statusOk(r.Status));
+  showSheet(`<div class="grabber"></div>
+    <div class="sh-nav"><button class="txtbtn" data-act="closeSheet">Abbrechen</button><div class="sh-title">Status unklar</div><span></span></div>
+    <div class="gfoot" style="margin:8px 4px 12px"><b>${bad.length} Scan${bad.length === 1 ? '' : 's'}</b> ${bad.length === 1 ? 'hat' : 'haben'} keinen klaren Status. Der Export wurde gestoppt, damit nichts Falsches in der Excel steht. Wähle für jeden Eintrag:</div>
+    ${bad.map(r => `<div class="group"><div class="row stack"><div class="k">${esc(r['Asset-ID'] || r.Hostname || r['Seriennr.'] || r['Code (anderer)'] || '?')}</div><div class="v">${esc([r['Incident/WO'], r.Standort].filter(Boolean).join(' · '))}</div></div>
+      <div class="row tap" data-act="fixStatus" data-id="${r._tid}" data-i="${r._si}" data-w="Altes Gerät"><span class="k blue">Alt (zurück)</span></div>
+      <div class="row tap" data-act="fixStatus" data-id="${r._tid}" data-i="${r._si}" data-w="Neues Gerät"><span class="k blue">Neu (ausgeliefert)</span></div></div>`).join('')}`, 'export');
+}
 async function exportInventory(range, mode = 'save'){
   const rows = inventoryRows(range);
   if(!rows.length){ toast('Keine Geräte im gewählten Zeitraum'); return; }
+  if(rows.some(r => !statusOk(r.Status))){ warnStatus(range); return; }                // nichts Falsches exportieren
+  rows.forEach(r => { delete r._tid; delete r._si; });
   try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
   const cols = ['Status','Asset-ID','Hostname','Seriennr.','Hinweis','Typ','Beschreibung','Incident/WO','Auftrag','Standort','Etage/Büro','Datum','Art','Kontakt','Code (anderer)','Gescannt','Erledigt','Notiz'];
   const widths = [18,13,12,13,20,11,34,18,10,28,22,11,11,24,14,9,9,40];
@@ -2761,6 +2795,12 @@ document.addEventListener('click', e => {
     case 'scanNew': openScanner('new', id); break;
     case 'finishDone': toggleDone(id, true); toast('Erledigt'); break;
     case 'exRange': exportRange = b.dataset.v; openExport(); break;
+    case 'fixStatus': {
+      const t = state.tickets.find(x => x.id === id), sc = t && t.scans && t.scans[+b.dataset.i]; if(!sc) break;
+      sc.what = b.dataset.w; save();
+      if(inventoryRows(exportRange).some(r => !statusOk(r.Status))) warnStatus(exportRange); else { openExport(); toast('Status korrigiert'); }
+      break;
+    }
     case 'xlsxMail': exportInventory(exportRange, 'mail'); break;
     case 'xlsxSave': exportInventory(exportRange, 'save'); break;
     case 'shareNow': if(pendingShare) navigator.share(pendingShare).then(() => { pendingShare = null; closeSheet(); }).catch(e => { if(e.name !== 'AbortError') toast(errMsg(e)); }); break;
