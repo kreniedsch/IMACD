@@ -245,6 +245,9 @@ textarea.notes::placeholder{color:var(--label3)}
 .shelfbtn:active{transform:scale(.92)}
 .shelfbtn svg{width:16px;height:16px}
 .shelfbtn.on{background:var(--plum);border-color:var(--plum);color:#fff}
+.packno{flex:none;width:22px;height:22px;border-radius:50%;background:var(--fill);color:var(--label2);font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;margin-right:-4px}
+.lagerrow.picked .packno{opacity:.5}
+.sublabel{margin:12px 4px 6px;font-size:13px;font-weight:600;color:var(--label2)}
 .lagerrow.picked{background:color-mix(in srgb,var(--plum) 10%,var(--card))}
 .lagerrow.picked .fx1{color:var(--label2);text-decoration:line-through}
 button.pk{border:0;cursor:pointer;font-family:inherit}
@@ -1292,22 +1295,40 @@ function renderPlan(){
   // Material aus dem Lager (vor Tourbeginn oben, danach unten)
   let L = '';
   // – antippen = eingepackt
+  const pst = {}; P.items.forEach(i => { if(i.type === 'ticket') pst[i.t.id] = i.t.start && !i.t.flex ? toMin(i.t.start) : i.start; });
+  const tOf = t => pst[t.id] ?? (t.start ? toMin(t.start) : 9999);
+  const shelfCmp = (a,b) => a.shelf.localeCompare(b.shelf, 'de', { numeric:true });
   const matAll = state.tickets.filter(t => t.date === view.date && t.shelf && visible(t) && !t.done)
-    .sort((a,b) => (!!a.picked - !!b.picked) || a.shelf.localeCompare(b.shelf, 'de', { numeric:true }));
+    .sort((a,b) => tOf(a) - tOf(b) || shelfCmp(a,b));
+  const packNo = {}; matAll.forEach((t, i) => packNo[t.id] = i + 1);           // Packreihenfolge = Terminreihenfolge
+  const bySh = state.settings.lagerSort === 'regal';
   if(matAll.length){
     const np = matAll.filter(t => t.picked).length, all = np === matAll.length;
     L += `<div class="glabel">Aus dem Lager holen<span class="lagerprog ${all ? 'done' : ''}">${np}/${matAll.length}</span></div>
-      <div class="pbar lagerbar"><div style="width:${Math.round(np / matAll.length * 100)}%"></div></div>`;
+      <div class="pbar lagerbar"><div style="width:${Math.round(np / matAll.length * 100)}%"></div></div>
+      <div class="seg" style="margin-top:10px">${[['zeit','Nach Zeit'],['regal','Nach Regal']].map(([v,l]) => `<button class="${(bySh ? 'regal' : 'zeit') === v ? 'on' : ''}" data-act="lagerSort" data-v="${v}">${l}</button>`).join('')}</div>`;
     if(all) L += `<div class="card allok" style="margin-top:8px"><span class="sq" style="--c:var(--plum)">${ICON.check}</span>Alles eingepackt – gute Fahrt!</div>`;
-    L += `<div class="group" style="margin-top:8px">` + matAll.map(t => `
+    const row = t => `
       <div class="row tap lagerrow ${t.picked ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
+        <span class="packno">${packNo[t.id]}</span>
         <button class="shelfbtn ${t.picked ? 'on' : ''}" data-act="pick" data-id="${t.id}" aria-label="Regal ${esc(t.shelf)} eingepackt">
           ${t.picked ? ICON.check : ''}<span>${esc(t.shelf)}</span></button>
         <div class="k"><div class="fx1 ellip">${esc(t.newDevice || t.material || (t.oldDevice ? 'Ersatz für ' + t.oldDevice : t.title) || 'Gerät')}</div>
-          <div class="fx2 ellip">${esc([t.start, t.orderId ? 'Auftrag '+t.orderId : (t.free ? 'Kostenlos' : ''), t.ticket].filter(Boolean).join(' · '))}</div>
+          <div class="fx2 ellip">${esc([tOf(t) < 9999 ? (t.flex ? '~' : '') + fromMin(tOf(t)) : '', t.orderId ? 'Auftrag '+t.orderId : (t.free ? 'Kostenlos' : ''), t.ticket].filter(Boolean).join(' · '))}</div>
           ${packChips(t, true)}</div>
         <span class="chev">${ICON.chev}</span>
-      </div>`).join('') + `</div>`;
+      </div>`;
+    const pickedLast = list => [...list.filter(t => !t.picked), ...list.filter(t => t.picked)];
+    if(bySh){
+      const am = matAll.filter(t => tOf(t) < 12 * 60), pm = matAll.filter(t => tOf(t) >= 12 * 60);
+      [['Vormittag', am], ['Nachmittag', pm]].forEach(([lab, list]) => {
+        if(!list.length) return;
+        L += `<div class="sublabel">${lab}</div><div class="group">` + pickedLast([...list].sort(shelfCmp)).map(row).join('') + `</div>`;
+      });
+      L += `<div class="gfoot" style="margin-top:6px">Nummer = Reihenfolge der Termine. Innerhalb Vormittag/Nachmittag nach Regal sortiert.</div>`;
+    } else {
+      L += `<div class="group" style="margin-top:8px">` + pickedLast(matAll).map(row).join('') + `</div>`;
+    }
     // Gesamte Packliste (nur noch nicht Eingepacktes)
     const tot = {};
     matAll.filter(t => !t.picked).forEach(t => packList(t).filter(i => !(t.packed || {})[i.key]).forEach(i => {
@@ -2470,6 +2491,7 @@ document.addEventListener('click', e => {
     case 'xlsxSave': exportInventory(exportRange, 'save'); break;
     case 'shareNow': if(pendingShare) navigator.share(pendingShare).then(() => { pendingShare = null; closeSheet(); }).catch(e => { if(e.name !== 'AbortError') toast(errMsg(e)); }); break;
     case 'openExport': openExport(); break;
+    case 'lagerSort': state.settings.lagerSort = b.dataset.v; save(); renderPlan(); break;
     case 'openMissing': openMissing(b.dataset.v || 'day'); break;
     case 'pick': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
