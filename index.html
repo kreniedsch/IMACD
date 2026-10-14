@@ -674,7 +674,7 @@ const OL_LABEL = /^\W{0,3}(betreff|subject|beginn|start|ende|end|serientyp|organ
 const KIND_RE = /\b(austausch|abbau|abholung|aufbau|(?:rampen)?lieferung|install(?:ation)?|neuinstallation|move|umzug|z(?:ü|ue)geln|add|change|dispose|entsorgung|rollout|ersatz|r(?:ü|ue)ckbau|r(?:ü|ue)cknahme|abholen|ausliefern|staging|stagen)\b/i;
 function outlookEnhance(t, lines, text){
   // Geräte (Computernamen der Stadt Zürich)
-  const dev = [...new Set([...text.matchAll(/\bzrh[l1I][a-z0-9]{3,5}\b/gi)].map(m => m[0].toUpperCase().replace(/^ZRH[1I]/,'ZRHL')))];
+  const dev = [...new Set([...text.matchAll(/\bzrh[lehtw1I][a-z0-9]{3,5}\b/gi)].map(m => m[0].toUpperCase().replace(/^ZRH[1I]/,'ZRHL')))];
   if(dev.length) t.devices = dev.join(', ');
 
   // Ticketnummer aus zerstückelter Texterkennung zusammensetzen (INC + 12 Ziffern)
@@ -753,7 +753,7 @@ function outlookEnhance(t, lines, text){
       if(/^[A-Z][0-9lI|T]{1,2}$/.test(sg) && !t.shelf){ t.shelf = sg[0] + sg.slice(1).replace(/[lI|T]/g,'1'); continue; }   // Regalplatz
       if(/^\d{6}$/.test(num) && !t.orderId){ t.orderId = num; continue; }                                                     // Auftrags-ID
       if(/^\d{8,12}$/.test(num) && !t.newDevice){ t.newDevice = num; continue; }                                               // Asset-ID
-      if(/^zrh[l1I][a-z0-9]{3,5}$/i.test(sg) && !t.newDevice){ t.newDevice = sg.toUpperCase().replace(/^ZRH[1I]/,'ZRHL'); continue; } // Hostname
+      if(/^zrh[lehtw1I][a-z0-9]{3,5}$/i.test(sg) && !t.newDevice){ t.newDevice = sg.toUpperCase().replace(/^ZRH[1I]/,'ZRHL'); continue; } // Hostname
       if(new RegExp('^'+TICKET_RE.source+'$','i').test(sg)) continue;
       const od = sg.match(/^(austausch|abbau|abholung|r(?:ü|ue)ckbau|ersatz|entsorgung)\s*:?\s*(.+)$/i);
       if(od){
