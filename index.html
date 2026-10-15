@@ -660,7 +660,24 @@ function parseBlock(raw, fallbackDate){
   t.group = groupOf(text);
   t.title = t.title.slice(0,100);
   { const ca = callAhead(text); if(ca){ t.callAhead = ca.min; t.callNote = ca.note; } }
+  enrichDevices(t, text);
   return t;
+}
+/* Neuer Hostname und alte Asset-IDs auch aus der Beschreibung (z. B. «F10 / 251005, zrhlC7C5 /» oder «Serviceprodukt-Wechsel von zrhe5D18, 4100001996 …») */
+function enrichDevices(t, text){
+  const old = hostsOf(t.oldDevice), oldN = old.map(normCode);
+  const wm = text.match(/wechsel von\s+([^\n]*?)\s+(?:bitte|ausf|mit\b)/i);
+  if(wm){
+    const ids = (wm[1].match(/\b\d{8,12}\b/g) || []).filter(id => !normCode(t.oldDevice).includes(id) && !normCode(t.newDevice).includes(id));
+    const hs = hostsInText(wm[1]).filter(h => !oldN.includes(normCode(h)));
+    const add = [...hs, ...ids];
+    if(add.length) t.oldDevice = (t.oldDevice ? t.oldDevice + ' + ' : '') + add.join(', ');
+  }
+  if(!hostsOf(t.newDevice).length && !/abholung|abbau|r(ü|ue)ckbau/i.test(t.kind || '')){
+    const allOld = hostsOf(t.oldDevice).map(normCode);
+    const cand = [...new Set([...text.matchAll(/\b\d{6}\s*,\s*(zrh[a-z][a-z0-9]{3,5})\b/gi)].map(m => m[1].toUpperCase()))].filter(h => !allOld.includes(normCode(h)));
+    if(cand.length === 1) t.newDevice = t.newDevice ? t.newDevice + ', ' + cand[0] : cand[0];
+  }
 }
 
 /* «Vorher anrufen» erkennen: callAhead = Minuten (0 = ohne Zeitangabe), callNote = Originaltext */
@@ -2594,7 +2611,9 @@ async function handleScanAsync(code, format, frame){
       flash(null, `Seriennr. ${sn}`, mode === 'old' ? 'Gespeichert – Asset-ID später am PC nachschlagen' : 'Gespeichert');
       return;
     }
-    if(!m && exp.length && isAssetCode(code)){
+    const pk = devKind(code), peri = pk === 'Monitor' || pk === 'Dock';
+    if(!m && peri){ flash(true, `${KIND_LABEL[pk]} gespeichert`, `${label} · Asset ${code} · Etikett ohne Hostname`); }
+    else if(!m && exp.length && isAssetCode(code)){
       const r = await hostCheck(code, frame, exp);
       if(r && r.match){ m = label; host = r.match; flash(true, `${r.match} stimmt`, `${label} · Asset ${code}`); }
       else if(r && r.hosts.length){ host = r.hosts[0]; flash(false, 'Falsches Gerät?', `Etikett: ${r.hosts.join(', ')} · Ticket: ${exp.join(', ')}`, retryActs(t, mode, code)); }
@@ -2609,7 +2628,9 @@ async function handleScanAsync(code, format, frame){
   if(scan.mode === 'ticket'){
     const t = state.tickets.find(x => x.id === scan.id); if(!t) return;
     let what = codeMatches(t, code), host = '', readInfo = '';
-    if(!what && isAssetCode(code)){
+    const pk = devKind(code), peri = pk === 'Monitor' || pk === 'Dock';
+    if(!what && peri) readInfo = `${KIND_LABEL[pk]} – auf dem Etikett steht kein Hostname.`;
+    else if(!what && isAssetCode(code)){
       const nh = hostsOf(t.newDevice), oh = hostsOf(t.oldDevice);
       if(nh.length || oh.length){
         const r = await hostCheck(code, frame, [...nh, ...oh]);
@@ -2630,10 +2651,10 @@ async function handleScanAsync(code, format, frame){
       <div class="sh-nav"><button class="txtbtn" data-act="backDetail" data-id="${t.id}">Abbrechen</button><div class="sh-title">Gescannt</div><span></span></div>
       <div class="group" style="margin-top:8px"><div class="row stack"><div class="k">${/^\d{8,12}$/.test(code) ? 'Asset-Nr.' : sn ? 'Seriennummer' : 'Code'}</div><div class="v" style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums">${esc(code)}</div></div></div>
       ${host ? `<div class="group"><div class="row stack"><div class="k">Hostname auf Etikett</div><div class="v" style="font-weight:600;color:var(--red)">${esc(host)}</div></div></div>` : ''}
-      <div class="gfoot">${readInfo ? esc(readInfo) + ' ' : ''}Dieser Code steht nicht im Ticket. Welches Gerät ist das?</div>
+      <div class="gfoot">${readInfo ? esc(readInfo) + ' ' : ''}${peri ? 'Neu oder alt?' : 'Dieser Code steht nicht im Ticket. Welches Gerät ist das?'}</div>
       <div class="group" style="margin-top:16px">
-        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-h="${esc(host)}" data-w="Neues Gerät"><span class="k blue">Neues Gerät${t.newDevice ? ' ('+esc(t.newDevice)+')' : ''}</span></div>
-        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-h="${esc(host)}" data-w="Altes Gerät"><span class="k blue">Altes Gerät${t.oldDevice ? ' ('+esc(t.oldDevice.split(' ')[0])+')' : ''}</span></div>
+        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-h="${esc(host)}" data-w="Neues Gerät"><span class="k blue">${peri ? (pk === 'Monitor' ? 'Neuer Monitor' : 'Neue Dockingstation') : 'Neues Gerät' + (t.newDevice ? ' ('+esc(t.newDevice)+')' : '')}</span></div>
+        <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-h="${esc(host)}" data-w="Altes Gerät"><span class="k blue">${peri ? (pk === 'Monitor' ? 'Alter Monitor' : 'Alte Dockingstation') : 'Altes Gerät' + (t.oldDevice ? ' ('+esc(t.oldDevice.split(' ')[0])+')' : '')}</span></div>
         <div class="row tap" data-act="assignScan" data-id="${t.id}" data-v="${esc(code)}" data-w=""><span class="k blue">Nur speichern</span></div>
       </div>`, 'scanassign');
     return;
@@ -2641,7 +2662,7 @@ async function handleScanAsync(code, format, frame){
   // Suche: heutiger Tag zuerst, dann alle
   const order = [...state.tickets.filter(t => t.date === view.date), ...state.tickets.filter(t => t.date !== view.date)];
   let found = order.map(t => ({ t, what: codeMatches(t, code) })).filter(x => x.what), fHost = '', fHosts = [];
-  if(!found.length && isAssetCode(code) && frame){
+  if(!found.length && isAssetCode(code) && frame && !['Monitor', 'Dock'].includes(devKind(code))){
     const all = order.flatMap(t => [...hostsOf(t.newDevice), ...hostsOf(t.oldDevice)]);
     const r = await hostCheck(code, frame, all);
     if(r) fHosts = r.hosts;
