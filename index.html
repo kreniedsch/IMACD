@@ -964,7 +964,21 @@ function outlookEnhance(t, lines, text){
   const k2 = (t.title + ' ' + text).match(KIND_RE);
   if(k2){ const w = k2[1].toLowerCase(); t.kind = /^stag/.test(w) ? 'Staging' : /^z/.test(w) ? 'Umzug' : /lieferung/.test(w) ? 'Lieferung' : w[0].toUpperCase()+w.slice(1); }
   if(t.title.startsWith('Lieferung')) t.kind = 'Lieferung';
+  pickupFix(t, text);
   if(!t.title) t.title = [t.kind, t.oldDevice || t.material || t.newDevice].filter(Boolean).join(': ') || 'Ticket';
+}
+
+/* «2x Monitorfüsse mitnehmen» + «abgeholt / zurückgelassen / entsorgen» = Abholung, keine Lieferung */
+function pickupFix(t, text){
+  if(!/^lieferung$/i.test(t.kind || '') || t.newDevice) return;
+  const src = String(text || t.raw || ''), what = t.material || (t.title || '').replace(/^lieferung:\s*/i,'');
+  const take = /\b(mitnehmen|abholen|zur(?:ü|ue)cknehmen)\b/i.test(what);
+  const ctx = /abgeholt|abholen|abholung|zur(?:ü|ue)ckgelassen|entsorg|deponier|zur(?:ü|ue)ckgeben|retour/i.test(src);
+  if(!(take && ctx)) return;
+  t.kind = 'Abholung';
+  const item = what.replace(/\s*\b(mitnehmen|abholen|zur(?:ü|ue)cknehmen)\b\s*/i,' ').trim();
+  t.title = 'Abholung: ' + (item || what);
+  t.material = '';
 }
 
 /* Outlook-Kalender (.ics) → ein Textblock pro Termin */
@@ -1108,6 +1122,7 @@ function load(){
     }
     if(s && s.settings && !s.settings.v2){ if(+s.settings.travel === 20) s.settings.travel = 10; s.settings.v2 = true; }
     if(s && Array.isArray(s.tickets)){ s.tickets = s.tickets.filter(t => t.group !== 'Post'); if(s.settings && s.settings.view === 'Post') s.settings.view = 'all'; }
+    if(s && Array.isArray(s.tickets)) s.tickets.forEach(t => { try{ pickupFix(t, t.raw); }catch(e){} });
     if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null, hwlc:s.hwlc||{}, moves:s.moves||[] };
   }catch(e){}
   return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null, hwlc:{}, moves:[] };
@@ -1278,7 +1293,8 @@ function packSource(t){
 function packList(t){
   const kind = (t.kind || '').toLowerCase();
   if(/abholung|abbau|rückbau|rueckbau/.test(kind)) return [];
-  const src = packSource(t), old = t.oldDevice || '', mat = t.material || '';
+  const noMon = x => String(x || '').replace(/monitor(?:f(?:ü|ue|u)ss?e?|fuss|arm|halter|halterung|st(?:ä|ae)nder)\w*/gi, 'Zubehör');
+  const src = noMon(packSource(t)), old = t.oldDevice || '', mat = noMon(t.material);
   const items = [];
   const add = (key, label, opt = {}) => { if(!items.some(i => i.key === key)) items.push({ key, label, ...opt }); };
   const isNew = /lieferung|aufbau|install/.test(kind) || /neueintritt\s*:\s*ja/i.test(t.raw || '');
