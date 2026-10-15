@@ -670,7 +670,7 @@ function hwlcTicket(t, text){
   const key = hm[1].replace(/[."“”]+$/, ''), d = hwlcParseDesc('', text);
   const what = d.rows.map(r => `${r.count == null ? '–' : r.count}× ${String(r.desc).split(/\n| · /)[0].replace(/^\d+\s*x\s*/i, '')}`).join(', ');
   t.title = ('HWLC ' + key.replace(/^HWLC_/, '').replace(/_/g, ' ') + (what ? ' · ' + what : '')).slice(0, 100);
-  if(/rampe|lieferung|aufbau/i.test(key + ' ' + d.rows.map(r => r.auftrag).join(' '))) t.kind = 'Lieferung';
+  if(/rampe|lieferung|aufbau/i.test(key + ' ' + d.rows.map(r => r.auftrag).join(' '))){ t.kind = 'Lieferung'; if(!t.material && what) t.material = what; }
   const k = d.kv['Kontaktperson'];
   if(k){ const m = k.match(/^([^(]+?)\s*\(([^)]*)\)/); if(m){ t.contact = m[1].trim(); const ph = (m[2].match(/\+?\d[\d ]{8,}\d/) || [])[0]; if(ph) t.phone = fmtPhone(ph); } else t.contact = k.trim(); }
   if(d.kv['Standortspezialität'] && !t.techInfo) t.techInfo = d.kv['Standortspezialität'];
@@ -1251,6 +1251,8 @@ const HP_RE = /\bHP\b|elite|x360|\bEB\b|\b(8[34]0|6[45]0|1030|1040)\s?G\d|prodes
 const brandOf = s => { s = s || ''; const l = LENOVO_RE.test(s), h = HP_RE.test(s); return l && !h ? 'Lenovo' : h && !l ? 'HP' : ''; };
 const NB_RE = /notebook|laptop|x360|elitebook|\bEB\b|thinkpad|yoga|\bL1[3-6]\b|\b(8[34]0|6[45]0|1030|1040)\s?G\d/i;
 const PC_RE = /desktop|elitedesk|thinkcentre|tiny|prodesk|thin ?client|\bTC\b|\bt6[34]0\b/i;
+// Ins Lager: alles mit Regal – und Lieferungen/Aufbau ohne Regal (z. B. Rampenlieferung), damit nichts vergessen geht
+const needsLager = t => !!t.shelf || (/lieferung|aufbau|install/i.test(t.kind || '') && !!(t.material || t.newDevice));
 function packSource(t){
   const betreff = ((t.notes || '').match(/^Betreff:.*$/m) || [''])[0];
   const extra = (t.raw || '').split('\n').filter(l => /auftrag bitte|achtung|^\s*monitor\s*:|headset\s*:|kamera|webcam|tastatur|maus|ladeger|netzteil|^\s*\+/i.test(l) && !/sollen auch|abgebaut werden|funktioniert|defekt|problem|störung/i.test(l));
@@ -1473,8 +1475,8 @@ function renderPlanCore(){
   // – antippen = eingepackt
   const pst = {}; P.items.forEach(i => { if(i.type === 'ticket') pst[i.t.id] = i.t.start && !i.t.flex ? toMin(i.t.start) : i.start; });
   const tOf = t => pst[t.id] ?? (t.start ? toMin(t.start) : 9999);
-  const shelfCmp = (a,b) => a.shelf.localeCompare(b.shelf, 'de', { numeric:true });
-  const matAll = state.tickets.filter(t => t.date === view.date && t.shelf && visible(t) && !t.done)
+  const shelfCmp = (a,b) => (a.shelf || '~').localeCompare(b.shelf || '~', 'de', { numeric:true });
+  const matAll = state.tickets.filter(t => t.date === view.date && needsLager(t) && visible(t) && !t.done)
     .sort((a,b) => tOf(a) - tOf(b) || shelfCmp(a,b));
   const packNo = {}; matAll.forEach((t, i) => packNo[t.id] = i + 1);           // Packreihenfolge = Terminreihenfolge
   const bySh = state.settings.lagerSort === 'regal';
@@ -1487,8 +1489,8 @@ function renderPlanCore(){
     const row = t => `
       <div class="row tap lagerrow ${t.picked ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
         <span class="packno">${packNo[t.id]}</span>
-        <button class="shelfbtn ${t.picked ? 'on' : ''}" data-act="pick" data-id="${t.id}" aria-label="Regal ${esc(t.shelf)} eingepackt">
-          ${t.picked ? ICON.check : ''}<span>${esc(t.shelf)}</span></button>
+        <button class="shelfbtn ${t.picked ? 'on' : ''}" data-act="pick" data-id="${t.id}" aria-label="${t.shelf ? 'Regal ' + esc(t.shelf) : 'Lager'} eingepackt">
+          ${t.picked ? ICON.check : ''}<span>${esc(t.shelf || 'Lager')}</span></button>
         <div class="k"><div class="fx1 ellip">${esc(t.newDevice || t.material || (t.oldDevice ? 'Ersatz für ' + t.oldDevice : t.title) || 'Gerät')}</div>
           <div class="fx2 ellip">${esc([tOf(t) < 9999 ? (t.flex ? '~' : '') + fromMin(tOf(t)) : '', t.orderId ? 'Auftrag '+t.orderId : (t.free ? 'Kostenlos' : ''), t.ticket].filter(Boolean).join(' · '))}</div>
           ${packChips(t, true)}</div>
@@ -3763,7 +3765,7 @@ function introData(){
   let sum;
   if(!T.length) sum = 'Heute noch keine Tickets.<br>Kalender importieren und los.';
   else {
-    const fix = T.filter(t => !t.flex).length, flex = T.length - fix, lager = T.filter(t => t.shelf && !t.picked).length;
+    const fix = T.filter(t => !t.flex).length, flex = T.length - fix, lager = T.filter(t => needsLager(t) && !t.picked).length;
     sum = `<b>${T.length} ${T.length === 1 ? 'Ticket' : 'Tickets'}</b> · ${fix} Fix · ${flex} Flex`
       + (firstT ? `<br>Erster Termin <b>${esc(firstT.start)}</b>${firstT.address ? ' · ' + esc(firstT.address) : ''}` : '')
       + (lager ? `<br>${lager} ${lager === 1 ? 'Gerät' : 'Geräte'} im Lager holen` : '');
