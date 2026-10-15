@@ -661,7 +661,19 @@ function parseBlock(raw, fallbackDate){
   t.title = t.title.slice(0,100);
   { const ca = callAhead(text); if(ca){ t.callAhead = ca.min; t.callNote = ca.note; } }
   enrichDevices(t, text);
+  hwlcTicket(t, text);
   return t;
+}
+/* HWLC-Termin: verständlicher Titel, Kontakt mit Telefon, Standortspezialität als Info */
+function hwlcTicket(t, text){
+  const hm = text.match(/Hardware-?Life\s?Cycle[^\n]*?(HWLC_[A-Za-z0-9_.]+)/i); if(!hm) return;
+  const key = hm[1].replace(/[."“”]+$/, ''), d = hwlcParseDesc('', text);
+  const what = d.rows.map(r => `${r.count == null ? '–' : r.count}× ${String(r.desc).split(/\n| · /)[0].replace(/^\d+\s*x\s*/i, '')}`).join(', ');
+  t.title = ('HWLC ' + key.replace(/^HWLC_/, '').replace(/_/g, ' ') + (what ? ' · ' + what : '')).slice(0, 100);
+  if(/rampe|lieferung|aufbau/i.test(key + ' ' + d.rows.map(r => r.auftrag).join(' '))) t.kind = 'Lieferung';
+  const k = d.kv['Kontaktperson'];
+  if(k){ const m = k.match(/^([^(]+?)\s*\(([^)]*)\)/); if(m){ t.contact = m[1].trim(); const ph = (m[2].match(/\+?\d[\d ]{8,}\d/) || [])[0]; if(ph) t.phone = fmtPhone(ph); } else t.contact = k.trim(); }
+  if(d.kv['Standortspezialität'] && !t.techInfo) t.techInfo = d.kv['Standortspezialität'];
 }
 /* Neuer Hostname und alte Asset-IDs auch aus der Beschreibung (z. B. «F10 / 251005, zrhlC7C5 /» oder «Serviceprodukt-Wechsel von zrhe5D18, 4100001996 …») */
 function enrichDevices(t, text){
@@ -3316,7 +3328,7 @@ function hwlcParseDesc(html, plain){
     }
   } else if(plain){
     const txt = clean(plain), body = txt.split(/\n(?:Gruss|Gruß) und Dank/i)[0];
-    ['Tranche', 'D/DA', 'Ort', 'Datum', 'Kontaktperson', 'Standortspezialität'].forEach(k => { const m = body.match(new RegExp(k.replace('/', '\\/') + ':\\s*\\n?([^\\n]*)')); if(m) out.kv[k] = m[1].trim(); });
+    ['Tranche', 'D/DA', 'Ort', 'Datum', 'Kontaktperson', 'Standortspezialität'].forEach(k => { const m = body.match(new RegExp(k.replace('/', '\\/') + ':\\s*\\n?([^\\n]*)')); if(m && !/^(Auftrag|Anzahl|Tranche|D\/DA|Ort|Datum|Kontaktperson|Standortspezialität):?$/i.test(m[1].trim())) out.kv[k] = m[1].trim(); });
     for(const m of body.matchAll(/((?:Peripherie|Tausch|Aufbau|Abbau)[^\n]*Auftrag[^\n]*)\n([\d\s-]+)\n([^\n]+)/gi)){
       const nums = m[2].match(/\d+/g) || []; out.rows.push({ auftrag: m[1].trim(), count: nums.length ? +nums[nums.length - 1] : null, desc: m[3].trim(), place: out.kv['Ort'] || '' });
     }
