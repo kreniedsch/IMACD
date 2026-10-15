@@ -1123,6 +1123,7 @@ function load(){
     if(s && s.settings && !s.settings.v2){ if(+s.settings.travel === 20) s.settings.travel = 10; s.settings.v2 = true; }
     if(s && Array.isArray(s.tickets)){ s.tickets = s.tickets.filter(t => t.group !== 'Post'); if(s.settings && s.settings.view === 'Post') s.settings.view = 'all'; }
     if(s && Array.isArray(s.tickets)) s.tickets.forEach(t => { try{ pickupFix(t, t.raw); }catch(e){} });
+    if(s && s.settings && s.settings.noteTpl) for(const k of Object.keys(s.settings.noteTpl)) if(tplSpecific(s.settings.noteTpl[k])) delete s.settings.noteTpl[k];
     if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null, hwlc:s.hwlc||{}, moves:s.moves||[] };
   }catch(e){}
   return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null, hwlc:{}, moves:[] };
@@ -1993,11 +1994,14 @@ const DEV_NAMES = 'Notebook|Laptop|Monitor|Bildschirm|Dockingstation|Docking|Doc
 const normTpl = txt => String(txt)
   .replace(new RegExp(`\\b(Das|Der|Die|das|der|die)\\s+(${DEV_NAMES})\\b`, 'g'), '{Art} {Gerät}')
   .replace(new RegExp(`(?<!\\{)\\b(${DEV_NAMES})\\b(?!\\})`, 'g'), '{Gerät}');
+// Vorlage ist ticketspezifisch (Menge, Asset-Nr., kein Gerätewort) → nicht als Standard für alle verwenden
+function tplSpecific(tpl){ return /\d+\s?x\b|\b\d{5,}\b|zrh[a-z]\w{3,}/i.test(tpl) || !/\{Gerät\}|auftrag|arbeit|erledigt/i.test(tpl); }   // Funktion (hoisted), da schon in load() benutzt
 function devWord(t){
   const k = (t.kind || t.title || '').toLowerCase(), oldFirst = /austausch|abbau|abholung|r(ü|ue)ck/.test(k);
   const texts = oldFirst ? [t.oldDevice, t.title, t.newDevice, t.material] : [t.newDevice, t.material, t.title, t.oldDevice];
   for(const txt of texts.filter(Boolean)){
-    const src = String(txt).replace(/^\s*(austausch|abbau|abholung|aufbau|lieferung|umzug)\s*:\s*/i, '');
+    const src = String(txt).replace(/^\s*(austausch|abbau|abholung|aufbau|lieferung|umzug)\s*:\s*/i, '')
+      .replace(/monitor(?:f(?:ü|ue|u)ss?e?|fuss|arm|halter|halterung|st(?:ä|ae)nder)\w*/gi, 'Zubehör');
     let best = null;
     for(const d of DEV_WORDS){ const m = src.match(d.re); if(m && (best === null || m.index < best.i)) best = { i:m.index, d }; }
     if(best) return { w:best.d.w, art:best.d.art };
@@ -2026,7 +2030,12 @@ function noteDefault(t, test){
   const kind = noteKind(t), key = kind + '|' + (noteCanTest(kind) ? test : 'ohne');
   const { w, art } = noteSubject(t, kind), custom = (state.settings.noteTpl || {})[key];
   if(custom) return normTpl(custom).replace(/\{gerät\}/gi, w).replace(/\{art\}/gi, art);
-  const base = kind === 'andere' ? 'Der Auftrag wurde erledigt.' : `${art} ${w} wurde ${NOTE_VERB[kind]}.`;
+  let base = kind === 'andere' ? 'Der Auftrag wurde erledigt.' : `${art} ${w} wurde ${NOTE_VERB[kind]}.`;
+  if(w === 'Gerät' && (kind === 'lieferung' || kind === 'abholung')){
+    const m = String(t.material || (kind === 'abholung' ? (t.title || '').replace(/^\w+:\s*/,'') : '')).replace(/\s+/g,' ').trim();
+    const n = +(m.match(/^(\d+)\s?x\b/i) || [0, 1])[1];
+    if(m && m.length <= 45) base = `${m} ${n > 1 ? 'wurden' : 'wurde'} ${NOTE_VERB[kind]}.`;
+  }
   return test === 'mit' && noteCanTest(kind) ? base + ' Alles i.O.' : base;
 }
 function noteText(t){ return t.closeNote != null ? t.closeNote : noteDefault(t, t.closeTest || 'mit'); }
@@ -2952,6 +2961,7 @@ document.addEventListener('click', e => {
       const txt = ($('#cnText').value || '').trim(); if(!txt) break;
       const kind = noteKind(t), { w, art } = noteSubject(t, kind);
       const tpl = normTpl(txt);
+      if(tplSpecific(tpl)){ t.closeNote = txt; save(); toast('Nur für dieses Ticket gespeichert – der Text passt nicht für andere Tickets'); break; }
       state.settings.noteTpl = { ...(state.settings.noteTpl || {}), [kind + '|' + (noteCanTest(kind) ? (t.closeTest || 'mit') : 'ohne')]: tpl };
       save(); toast('Als Standard gemerkt'); break;
     }
