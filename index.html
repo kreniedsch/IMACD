@@ -1127,6 +1127,23 @@ function durOf(t){
   if(t.start && t.end){ const d = toMin(t.end)-toMin(t.start); if(d > 0) return d; }
   return +state.settings.dur || 45;
 }
+/* Zwei Termine gleichzeitig an verschiedenen Standorten (gleicher Techniker) */
+function clashes(date){
+  const T = state.tickets.filter(t => t.date === date && visible(t) && !t.done && t.start);
+  const iv = t => { const a = toMin(t.start), e = t.end ? toMin(t.end) : null; return [a, e && e > a ? e : a + durOf(t)]; };
+  const out = [];
+  for(let i = 0; i < T.length; i++) for(let j = i + 1; j < T.length; j++){
+    const a = T[i], b = T[j];
+    if((a.group || '') !== (b.group || '')) continue;                 // «Alle»: verschiedene Techniker sind normal
+    if(a.flex && b.flex) continue;
+    if(siteKey(a) && siteKey(a) === siteKey(b)) continue;              // gleicher Standort = machbar
+    const [as, ae] = iv(a), [bs, be] = iv(b);
+    if(as < be && bs < ae) out.push(as <= bs ? [a, b] : [b, a]);
+  }
+  return out;
+}
+const clashWith = (t, C) => C.filter(c => c.includes(t)).map(c => c[0] === t ? c[1] : c[0]);
+function clashText(o){ return `Gleichzeitig: ${o.start}${o.end ? '–' + o.end : ''} ${o.title || o.ticket || 'Ticket'}${o.address ? ' · ' + o.address : ''}`; }
 function siteKey(t){
   if(!t || !t.address) return '';
   const m = t.address.toLowerCase().replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/str(\.|asse)\b/g,'strasse')
@@ -1252,7 +1269,7 @@ const brandOf = s => { s = s || ''; const l = LENOVO_RE.test(s), h = HP_RE.test(
 const NB_RE = /notebook|laptop|x360|elitebook|\bEB\b|thinkpad|yoga|\bL1[3-6]\b|\b(8[34]0|6[45]0|1030|1040)\s?G\d/i;
 const PC_RE = /desktop|elitedesk|thinkcentre|tiny|prodesk|thin ?client|\bTC\b|\bt6[34]0\b/i;
 // Ins Lager: alles mit Regal – und Lieferungen/Aufbau ohne Regal (z. B. Rampenlieferung), damit nichts vergessen geht
-const needsLager = t => !!t.shelf || (/lieferung|aufbau|install/i.test(t.kind || '') && !!(t.material || t.newDevice));
+const needsLager = t => !!t.shelf || (/lieferung|aufbau|install/i.test(t.kind || '') && !!(t.material || t.newDevice || /hardware-?life|hwlc|hw-lc|rampenlieferung/i.test((t.notes || '') + ' ' + (t.title || ''))));
 function packSource(t){
   const betreff = ((t.notes || '').match(/^Betreff:.*$/m) || [''])[0];
   const extra = (t.raw || '').split('\n').filter(l => /auftrag bitte|achtung|^\s*monitor\s*:|headset\s*:|kamera|webcam|tastatur|maus|ladeger|netzteil|^\s*\+/i.test(l) && !/sollen auch|abgebaut werden|funktioniert|defekt|problem|störung/i.test(l));
@@ -1391,7 +1408,8 @@ function tlRow(t, start, end, opt={}){
         ${callLabel(t, start) && !t.done ? `<div class="callwarn">${ICON.phone}<span>${esc(callLabel(t, start))}</span></div>` : ''}
         ${t.techInfo && !t.done ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(t.techInfo)}</span></div>` : ''}
         ${packChips(t)}
-        ${opt.conflict?`<div class="tl-warn">Zeit knapp – vorheriges Ticket endet zu spät</div>`:''}
+        ${!t.done ? clashWith(t, opt.clash || []).map(o => `<div class="techinfo">${ICON.warn}<span><b>${esc(clashText(o))}</b></span></div>`).join('') : ''}
+        ${opt.conflict && !(opt.clash || []).some(c => c.includes(t))?`<div class="tl-warn">Zeit knapp – vorheriges Ticket endet zu spät</div>`:''}
         ${opt.late && !t.done ? `<div class="tl-warn" style="color:var(--orange)">Nach Arbeitsende (${esc(state.settings.dayEnd)})</div>`:''}
         ${!t.done ? warnings(t).filter(x => /^(Kontakt nur|Zeitfenster)/.test(x)).map(x => `<div class="tl-warn">${esc(x.replace(/ Vorher anrufen!$/,' – vorher anrufen'))}</div>`).join('') : ''}
       </div>
@@ -1430,6 +1448,11 @@ function renderPlanCore(){
   const lk = lookupOld(state.tickets.filter(t => t.date === view.date));
   if(lk.length) notes.unshift(iconRow('qr','indigo', `${lk.length} ${lk.length === 1 ? 'Altgerät' : 'Altgeräte'} nur mit Seriennr. – Asset-ID nachschlagen`, 'openMissing', 'data-v="day"'));
   if(miss.length) notes.unshift(iconRow('warn','orange', `<b>${miss.length} ${miss.length === 1 ? 'erledigtes Ticket' : 'erledigte Tickets'} ohne Alt-Scan</b>`, 'openMissing', 'data-v="day"'));
+  const C = clashes(view.date);
+  C.forEach(([a, b]) => notes.unshift(`<div class="row ic tap" data-act="detail" data-id="${a.id}"><span class="sq" style="--c:var(--red)">${ICON.warn}</span>
+    <div class="k"><div class="fx1"><b>${esc(a.start)}: 2 Termine an verschiedenen Standorten</b></div>
+    <div class="fx2 ellip">${esc(a.title || a.ticket || 'Ticket')}${a.address ? ' · ' + esc(a.address) : ''}</div>
+    <div class="fx2 ellip">${esc(b.start)} ${esc(b.title || b.ticket || 'Ticket')}${b.address ? ' · ' + esc(b.address) : ''}</div></div><span class="chev">${ICON.chev}</span></div>`));
   if(notes.length) h += `<div class="group" style="margin-bottom:14px">${notes.join('')}</div>`;
 
   if(!P.total){
@@ -1480,12 +1503,14 @@ function renderPlanCore(){
     .sort((a,b) => tOf(a) - tOf(b) || shelfCmp(a,b));
   const packNo = {}; matAll.forEach((t, i) => packNo[t.id] = i + 1);           // Packreihenfolge = Terminreihenfolge
   const bySh = state.settings.lagerSort === 'regal';
-  if(matAll.length){
+  const extraAll = state.tickets.filter(t => t.date === view.date && visible(t) && !t.done && !needsLager(t) && packList(t).length)
+    .sort((a,b) => tOf(a) - tOf(b));
+  if(matAll.length || extraAll.length){
     const np = matAll.filter(t => t.picked).length, all = np === matAll.length;
-    L += `<div class="glabel">Aus dem Lager holen<span class="lagerprog ${all ? 'done' : ''}">${np}/${matAll.length}</span></div>
+    if(matAll.length) L += `<div class="glabel">Aus dem Lager holen<span class="lagerprog ${all ? 'done' : ''}">${np}/${matAll.length}</span></div>
       <div class="pbar lagerbar"><div style="width:${Math.round(np / matAll.length * 100)}%"></div></div>
       <div class="seg" style="margin-top:10px">${[['zeit','Nach Zeit'],['regal','Nach Regal']].map(([v,l]) => `<button class="${(bySh ? 'regal' : 'zeit') === v ? 'on' : ''}" data-act="lagerSort" data-v="${v}">${l}</button>`).join('')}</div>`;
-    if(all) L += `<div class="card allok" style="margin-top:8px"><span class="sq" style="--c:var(--plum)">${ICON.check}</span>Alles eingepackt – gute Fahrt!</div>`;
+    if(all && matAll.length) L += `<div class="card allok" style="margin-top:8px"><span class="sq" style="--c:var(--plum)">${ICON.check}</span>Alles eingepackt – gute Fahrt!</div>`;
     const row = t => `
       <div class="row tap lagerrow ${t.picked ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
         <span class="packno">${packNo[t.id]}</span>
@@ -1497,7 +1522,8 @@ function renderPlanCore(){
         <span class="chev">${ICON.chev}</span>
       </div>`;
     const pickedLast = list => [...list.filter(t => !t.picked), ...list.filter(t => t.picked)];
-    if(bySh){
+    if(!matAll.length){}
+    else if(bySh){
       const am = matAll.filter(t => tOf(t) < 12 * 60), pm = matAll.filter(t => tOf(t) >= 12 * 60);
       [['Vormittag', am], ['Nachmittag', pm]].forEach(([lab, list]) => {
         if(!list.length) return;
@@ -1507,9 +1533,16 @@ function renderPlanCore(){
     } else {
       L += `<div class="group" style="margin-top:8px">` + pickedLast(matAll).map(row).join('') + `</div>`;
     }
-    // Gesamte Packliste (nur noch nicht Eingepacktes)
+    // Weitere Tickets mit Zubehör (ohne Lager), z. B. Austausch mit Ladegerät, Maus, Headset
+    if(extraAll.length) L += `<div class="${matAll.length ? 'sublabel' : 'glabel'}">Zusätzlich mitnehmen</div><div class="group">` + extraAll.map(t => {
+      const p = packList(t), ok = p.every(i => (t.packed || {})[i.key]);
+      return `<div class="row tap lagerrow ${ok ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
+        <div class="k"><div class="fx1 ellip">${esc(t.title || t.ticket || 'Ticket')}</div>
+          <div class="fx2 ellip">${esc([tOf(t) < 9999 ? (t.flex ? '~' : '') + fromMin(tOf(t)) : '', t.ticket, t.address].filter(Boolean).join(' · '))}</div>
+          ${packChips(t, true)}</div><span class="chev">${ICON.chev}</span></div>`; }).join('') + `</div>`;
+    // Gesamte Packliste (nur noch nicht Eingepacktes) – alle offenen Tickets des Tages
     const tot = {};
-    matAll.filter(t => !t.picked).forEach(t => packList(t).filter(i => !(t.packed || {})[i.key]).forEach(i => {
+    [...matAll.filter(t => !t.picked), ...extraAll].forEach(t => packList(t).filter(i => !(t.packed || {})[i.key]).forEach(i => {
       const base = i.label.replace(/^(\d+)×\s*/,''), n = +(i.label.match(/^(\d+)×/) || [0,1])[1];
       tot[base] = tot[base] || { n:0, warn:false }; tot[base].n += n; tot[base].warn ||= !!i.warn;
     }));
@@ -1517,7 +1550,8 @@ function renderPlanCore(){
     if(tk.length) L += `<div class="gfoot" style="margin-top:8px"><b>Noch mitnehmen:</b> ${tk.map(k => `${tot[k].warn ? '⚠ ' : ''}${tot[k].n > 1 ? tot[k].n + '× ' : ''}${esc(k)}`).join(' · ')}</div>`;
   }
 
-  const lagerHtml = L, lagerAfter = P.done > 0 || !matAll.length || matAll.every(t => t.picked);
+  const packOpen = extraAll.some(t => packList(t).some(i => !(t.packed || {})[i.key]));
+  const lagerHtml = L, lagerAfter = P.done > 0 || (!matAll.length && !extraAll.length) || (matAll.every(t => t.picked) && !packOpen);
   if(!lagerAfter) h += lagerHtml;
 
   // Nächstes Ticket (fix oder flex) – gross oben
@@ -1541,6 +1575,7 @@ function renderPlanCore(){
       ${t.oldDevice?`<div class="tl-sub">${ICON.scan}<span>Altgerät scannen: ${esc(t.oldDevice)}</span></div>`:''}
       ${callLabel(t, st) && !t.done ? `<div class="callwarn">${ICON.phone}<span>${esc(callLabel(t, st))}</span></div>` : ''}
       ${t.techInfo ? `<div class="techinfo">${ICON.warn}<span><b>Info an Techniker:</b> ${esc(t.techInfo)}</span></div>` : ''}
+      ${clashWith(t, C).map(o => `<div class="techinfo">${ICON.warn}<span><b>${esc(clashText(o))}</b></span></div>`).join('')}
       ${ws.map(x => `<div class="tl-warn">${esc(x.replace(/ Vorher anrufen!$/,' – vorher anrufen'))}</div>`).join('')}
       ${packChips(t, true)}
       <div class="hacts h3">
@@ -1585,7 +1620,7 @@ function renderPlanCore(){
         if(run > 1) h += `<div class="sitehead">${ICON.pin}<span><b>Gleicher Standort</b> · ${esc(it.t.address)} · ${run} Tickets</span></div>`;
       }
       prevSite = sk;
-      h += tlRow(it.t, it.start, it.end, { now, conflict:!!it.conflict, late:it.late, together:it.together, siteCount: P.sites[sk] ? P.sites[sk].tickets.length : 0 });
+      h += tlRow(it.t, it.start, it.end, { now, conflict:!!it.conflict, late:it.late, together:it.together, siteCount: P.sites[sk] ? P.sites[sk].tickets.length : 0, clash:C });
     } else if(it.type === 'travel' || it.type === 'free'){
       prevSite = null;
       const ix = P.items.indexOf(it), pv = [...P.items.slice(0, ix)].reverse().find(x => x.type === 'ticket'), nx2 = P.items.slice(ix + 1).find(x => x.type === 'ticket');
@@ -1799,6 +1834,7 @@ function openDetail(id){
     </div>
     ${callLabel(t, plannedStart(t)) ? `<div class="callwarn big">${ICON.phone}<span><b>${esc(callLabel(t, plannedStart(t)))}</b>${t.callNote ? `<br><small>«${esc(t.callNote)}»</small>` : ''}</span></div>` : ''}
     ${t.techInfo ? `<div class="techinfo big">${ICON.warn}<span><b>Info an Techniker</b><br>${esc(t.techInfo)}</span></div>` : ''}
+    ${!t.done ? clashWith(t, clashes(t.date)).map(o => `<div class="techinfo big">${ICON.warn}<span><b>Gleichzeitig noch ein Termin</b><br>${esc(clashText(o).replace(/^Gleichzeitig: /,''))}<br><small>Mit der Dispo klären.</small></span></div>`).join('') : ''}
     ${W.length?`<div class="warn" style="margin:0 0 16px">${ICON.warn}<div>${W.map(esc).join('<br>')}</div></div>`:''}
     <div class="group">${info.map(r => `<div class="row stack"><div class="k">${r[0]}</div><div class="v">${r[2]?`<a href="${esc(r[2])}">${esc(r[1])}</a>`:esc(r[1]).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>
     ${attachHtml(t)}
