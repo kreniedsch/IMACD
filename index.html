@@ -364,6 +364,20 @@ nav.tabs button.on{color:var(--blue)}
 /* Hinweis-Toast */
 .toast{position:fixed;top:calc(env(safe-area-inset-top) + 10px);left:50%;transform:translate(-50%,-24px);opacity:0;transition:opacity .25s,transform .3s cubic-bezier(.2,.85,.25,1);background:var(--bar);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);color:var(--label);padding:11px 18px;border-radius:18px;font-size:15px;font-weight:500;line-height:1.3;box-shadow:0 8px 30px rgba(0,0,0,.16);z-index:70;width:max-content;max-width:min(340px,92vw);text-align:center;pointer-events:none}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+/* Druck */
+#printArea{display:none}
+@media print{
+  body > *:not(#printArea){display:none !important}
+  body{background:#fff !important}
+  #printArea{display:block;color:#000;font:11pt Calibri,Arial,sans-serif}
+  #printArea .pp{page-break-after:always;padding:8mm 6mm}
+  #printArea .pp:last-child{page-break-after:auto}
+  #printArea h1{font-size:13pt;margin:0 0 4mm;padding-bottom:1mm;border-bottom:2px solid #000}
+  #printArea table{border-collapse:collapse;margin-bottom:6mm}
+  #printArea th{text-align:left;vertical-align:top;padding:1.5mm 8mm 1.5mm 0;white-space:nowrap}
+  #printArea td{padding:1.5mm 0}
+  #printArea .pbody{line-height:1.35}
+}
 /* HWLC & Umzug */
 .sec-acts{display:flex;align-items:center;justify-content:space-between;margin:0 0 10px}
 .sec-acts>span{font-size:22px;font-weight:700;letter-spacing:-.01em}
@@ -981,6 +995,31 @@ function pickupFix(t, text){
   t.material = '';
 }
 
+/* Ausdrucken: Abholung/Abbau oder Betreff beginnt mit Auftrags-ID (kein Regal davor) */
+function needsPrint(t){
+  if(/abholung|abbau|r(ü|ue)ckbau/i.test(t.kind || '')) return true;
+  const b = (String(t.raw || '').match(/^Betreff:\s*(.*)$/m) || [])[1] || '';
+  return /^\d{6}\b/.test(b.trim());
+}
+function printTickets(list){
+  if(!list.length) return;
+  const field = (raw, k) => (String(raw).match(new RegExp('^' + k + ':\\s*(.*)$', 'm')) || [])[1] || '';
+  const fmtDT = v => { const m = String(v).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\s+(\d{1,2}:\d{2})/); if(!m) return v;
+    const d = new Date(+m[3], +m[2] - 1, +m[1]); return ['So','Mo','Di','Mi','Do','Fr','Sa'][d.getDay()] + ' ' + pad2(+m[1]) + '.' + pad2(+m[2]) + '.' + m[3] + ' ' + m[4]; };
+  const pages = list.map(t => {
+    const raw = String(t.raw || '');
+    const body = raw.split('\n').filter(l => !/^(Betreff|Ort|Beginn|Ende|Kategorien|Quelle):/.test(l)).join('\n').replace(/^\s+|\s+$/g, '').replace(/\n{3,}/g, '\n\n');
+    const rows = [['Betreff', field(raw, 'Betreff') || t.title], ['Ort', field(raw, 'Ort')], ['Beginn', fmtDT(field(raw, 'Beginn'))], ['Ende', fmtDT(field(raw, 'Ende'))],
+      ['Serientyp', '(Keine Angabe)'], ['Organisator*in', 'OIZ-SIBAP Betriebspartner'], ['Kategorien', field(raw, 'Kategorien')]];
+    return `<section class="pp"><h1>OIZ-SIBAP Betriebspartner</h1><table>${rows.map(([k, v]) => `<tr><th>${k}:</th><td>${esc(v)}</td></tr>`).join('')}</table>
+      <div class="pbody">${esc(body).replace(/\n/g, '<br>')}</div></section>`;
+  }).join('');
+  let el = $('#printArea'); if(!el){ el = document.createElement('div'); el.id = 'printArea'; document.body.appendChild(el); }
+  el.innerHTML = pages;
+  list.forEach(t => t.printed = true); save();
+  setTimeout(() => { window.print(); renderPlan(); toast(list.length === 1 ? 'Als gedruckt markiert' : `${list.length} Tickets als gedruckt markiert`); }, 50);
+}
+
 /* Outlook-Kalender (.ics) → ein Textblock pro Termin */
 let icsBusySkipped = 0;
 function icsToBlocks(ics){
@@ -1071,6 +1110,7 @@ function warnings(t){
 const SV = (d, w=2) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const SF = d => `<svg viewBox="0 0 24 24" fill="currentColor">${d}</svg>`;
 const ICON = {
+  print: SV('<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>'),
   check: SV('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 3),
   checkc: SV('<circle cx="12" cy="12" r="9"/><path d="M8 12.3l2.8 2.7L16.2 9.5"/>'),
   chev: SV('<path d="M9 5l7 7-7 7"/>', 2.5),
@@ -1568,7 +1608,21 @@ function renderPlanCore(){
   }
 
   const packOpen = extraAll.some(t => packList(t).some(i => !(t.packed || {})[i.key]));
-  const lagerHtml = L, lagerAfter = P.done > 0 || (!matAll.length && !extraAll.length) || (matAll.every(t => t.picked) && !packOpen);
+  // Ausdrucken: Abholungen/Abbau und Tickets, deren Betreff mit der Auftrags-ID beginnt
+  const prAll = state.tickets.filter(t => t.date === view.date && visible(t) && !t.done && needsPrint(t)).sort((a,b) => tOf(a) - tOf(b));
+  if(prAll.length){
+    const np = prAll.filter(t => t.printed).length, open = prAll.filter(t => !t.printed);
+    L = `<div class="glabel">Ausdrucken<span class="lagerprog ${np === prAll.length ? 'done' : ''}">${np}/${prAll.length}</span></div>
+      <div class="group">` + [...open, ...prAll.filter(t => t.printed)].map(t => `
+      <div class="row tap lagerrow ${t.printed ? 'picked' : ''}" data-act="detail" data-id="${t.id}">
+        <button class="shelfbtn ${t.printed ? 'on' : ''}" data-act="printed" data-id="${t.id}" aria-label="Gedruckt">${t.printed ? ICON.check : ''}<span>${ICON.print}</span></button>
+        <div class="k"><div class="fx1 ellip">${esc(t.title || t.ticket || 'Ticket')}</div>
+          <div class="fx2 ellip">${esc([tOf(t) < 9999 ? (t.flex ? '~' : '') + fromMin(tOf(t)) : '', t.orderId, t.address].filter(Boolean).join(' · '))}</div></div>
+        <span class="chev">${ICON.chev}</span></div>`).join('') + `</div>
+      ${open.length ? `<button class="btn-fill" style="margin-top:10px;width:100%" data-act="printAll">${ICON.print}${open.length === 1 ? '1 Ticket' : open.length + ' Tickets'} drucken</button>` : ''}` + L;
+  }
+  const prOpen = prAll.some(t => !t.printed);
+  const lagerHtml = L, lagerAfter = P.done > 0 || (!matAll.length && !extraAll.length && !prOpen) || (matAll.every(t => t.picked) && !packOpen && !prOpen);
   if(!lagerAfter) h += lagerHtml;
 
   // Nächstes Ticket (fix oder flex) – gross oben
@@ -1855,6 +1909,7 @@ function openDetail(id){
     ${W.length?`<div class="warn" style="margin:0 0 16px">${ICON.warn}<div>${W.map(esc).join('<br>')}</div></div>`:''}
     <div class="group">${info.map(r => `<div class="row stack"><div class="k">${r[0]}</div><div class="v">${r[2]?`<a href="${esc(r[2])}">${esc(r[1])}</a>`:esc(r[1]).replace(/\n/g,'<br>')}</div></div>`).join('')}</div>
     ${attachHtml(t)}
+    <div class="group" style="margin-top:12px"><div class="row ic tap" data-act="printOne" data-id="${t.id}"><span class="sq" style="--c:var(--${t.printed ? 'green' : 'indigo'})">${t.printed ? ICON.check : ICON.print}</span><span class="k blue">${t.printed ? 'Nochmals drucken' : 'Ticket drucken'}</span><span class="chev">${ICON.chev}</span></div></div>
     ${(() => { const p = packList(t);
       const hostSwap = (t.kind || '').toLowerCase() === 'austausch' && (/^zrh[let]/i.test(t.oldDevice || '') || NB_RE.test(t.oldDevice || '') || PC_RE.test(t.oldDevice || ''));
       const oldB0 = brandOf((t.oldDevice || '').replace(/\(durch.*$/i,''));
@@ -2981,12 +3036,15 @@ document.addEventListener('click', e => {
     case 'introPlay': playIntro(); break;
     case 'lagerSort': state.settings.lagerSort = b.dataset.v; save(); renderPlan(); break;
     case 'openMissing': openMissing(b.dataset.v || 'day'); break;
+    case 'printed': { const t = state.tickets.find(x => x.id === id); if(t){ t.printed = !t.printed; save(); renderPlan(); } break; }
+    case 'printAll': printTickets(state.tickets.filter(t => t.date === view.date && visible(t) && !t.done && needsPrint(t) && !t.printed)); break;
+    case 'printOne': printTickets([state.tickets.find(x => x.id === id)].filter(Boolean)); break;
     case 'pick': {
       const t = state.tickets.find(x => x.id === id); if(!t) break;
       t.picked = !t.picked; t.packed ||= {};
       packList(t).forEach(i => { t.packed[i.key] = t.picked; });
       save(); renderPlan();
-      if(t.picked) toast(`${t.shelf} eingepackt`);
+      if(t.picked) toast(`${t.shelf || 'Lager'} eingepackt`);
       break;
     }
     case 'packChip': {
