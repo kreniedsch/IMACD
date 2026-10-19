@@ -1622,7 +1622,7 @@ function renderPlanCore(){
       ${open.length ? `<button class="btn-fill" style="margin-top:10px;width:100%" data-act="printAll">${ICON.print}${open.length === 1 ? '1 Ticket' : open.length + ' Tickets'} drucken</button>` : ''}` + L;
   }
   const prOpen = prAll.some(t => !t.printed);
-  const lagerHtml = L, lagerAfter = P.done > 0 || (!matAll.length && !extraAll.length && !prOpen) || (matAll.every(t => t.picked) && !packOpen && !prOpen);
+  const lagerHtml = L, lagerAfter = true;   // Lager/Druck immer unter dem nächsten Ticket, damit es oben sofort sichtbar ist
   if(!lagerAfter) h += lagerHtml;
 
   // Nächstes Ticket (fix oder flex) – gross oben
