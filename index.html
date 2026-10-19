@@ -2134,8 +2134,11 @@ function toggleDone(id, force){
   if(!t.done && !force && (needsOldScan(t) || needsNewScan(t))){ openFinish(id); return; }
   t.done = !t.done; if(t.done) t.doneAt = new Date().toISOString();
   save(); renderPlan();
-  if(t.done && view.tab === 'plan' && !(sheetMode||'').endsWith(id)){ window.scrollTo({ top:0, behavior:'smooth' }); toast('Erledigt – nächstes Ticket oben'); }
-  if(sheetMode === 'detail:'+id || sheetMode === 'finish:'+id) openDetail(id);
+  if(t.done){
+    // Erledigt: Ticket schliessen und direkt zum Tagesplan (nächstes Ticket / Tagesablauf)
+    if(sheetMode === 'detail:'+id || sheetMode === 'finish:'+id) closeSheet();
+    window.scrollTo({ top:0, behavior:'smooth' }); toast('Erledigt – nächstes Ticket oben');
+  } else if(sheetMode === 'detail:'+id || sheetMode === 'finish:'+id) openDetail(id);
 }
 function openFinish(id){
   const t = state.tickets.find(x => x.id === id); if(!t) return;
@@ -2550,7 +2553,7 @@ function copyText(s, msg){
 
 /* ===================== SCANNER (QR / Barcode) ===================== */
 const BD_URL = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/dist/iife/ponyfill.js';
-let scan = { stream:null, timer:null, mode:'find', id:null, torch:false, detector:null };
+let scan = { stream:null, timer:null, mode:'find', id:null, torch:false, detector:null, keep:false };
 async function getDetector(){
   if(scan.detector) return scan.detector;
   const formats = ['qr_code','code_128','code_39','ean_13','ean_8','data_matrix','itf','upc_a','pdf417'];
@@ -2562,12 +2565,12 @@ async function getDetector(){
   return scan.detector;
 }
 async function openScanner(mode, id){
-  scan.mode = mode; scan.id = id || null;
+  scan.mode = mode; scan.id = id || null; scan.keep = ['old','new','ticket'].includes(mode);
   const t = id && state.tickets.find(x => x.id === id);
   scan.paused = false; scan.ask = null; scan.last = ''; $('#scanMsg').hidden = true;
   $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : 'Code scannen';
   if(CONT_MODES.has(mode)) setTimeout(contTitle, 0);
-  $('#scanHint').textContent = CONT_MODES.has(mode) ? 'Ein Etikett nach dem anderen scannen – mit ✕ beenden' : mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
+  $('#scanHint').textContent = (CONT_MODES.has(mode) || scan.keep) ? 'Ein Etikett nach dem anderen scannen – mit ✕ beenden' : mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
   $('#scanner').hidden = false; document.body.style.overflow = 'hidden';
   try{
     if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('Kamera nicht verfügbar (App in Safari über GitHub Pages öffnen)');
@@ -2593,6 +2596,18 @@ async function openScanner(mode, id){
               contShow(contScan(code));
               scan.timer = setTimeout(loop, 800); return;
             }
+          } else if(hit && scan.keep){
+            const code = hit.rawValue.trim(), now = Date.now();
+            if(!(code === scan.last && now - scan.lastAt < 2500)){
+              scan.last = code; scan.lastAt = now;
+              let frame = null;
+              try{ frame = document.createElement('canvas'); frame.width = v.videoWidth; frame.height = v.videoHeight; frame.getContext('2d').drawImage(v, 0, 0); }catch(e){ frame = null; }
+              $('.scan-frame').classList.add('hit'); setTimeout(() => $('.scan-frame').classList.remove('hit'), 350);
+              scan.paused = true;
+              try{ await handleScanAsync(code, hit.format, frame); }catch(e){ contShow({ ok:false, title:'Fehler', sub:errMsg(e) }); }
+              scan.paused = false;
+            }
+            scan.timer = setTimeout(loop, 800); return;
           } else if(hit){
             let frame = null;
             try{ frame = document.createElement('canvas'); frame.width = v.videoWidth; frame.height = v.videoHeight; frame.getContext('2d').drawImage(v, 0, 0); }catch(e){ frame = null; }
@@ -2611,7 +2626,7 @@ async function openScanner(mode, id){
 function closeScanner(){
   clearTimeout(scan.timer);
   if(scan.stream) scan.stream.getTracks().forEach(t => t.stop());
-  scan.stream = null; scan.torch = false; $('#torchBtn').classList.remove('on');
+  scan.stream = null; scan.torch = false; scan.keep = false; $('#torchBtn').classList.remove('on');
   $('#scanVideo').srcObject = null; $('.scan-frame').classList.remove('hit');
   $('#scanner').hidden = true; $('#scanMsg').hidden = true; scan.paused = false;
   if(!$('#sheetWrap').classList.contains('open')) document.body.style.overflow = '';
@@ -2720,7 +2735,7 @@ function handleScan(code, format, frame){ return handleScanAsync(code, format, f
 async function handleScanAsync(code, format, frame){
   if(isModemCode(code)){
     flash(false, 'Modem-Code (IMEI)', 'Das ist der LTE-Code. Bitte den Code neben «SN#» scannen.');
-    if(scan.id){ scan.mode === 'old' || scan.mode === 'new' ? openFinish(scan.id) : openDetail(scan.id); }
+    if(scan.id && !scan.keep){ scan.mode === 'old' || scan.mode === 'new' ? openFinish(scan.id) : openDetail(scan.id); }
     return;
   }
   const sn = !isAssetCode(code) ? snOf(code) : '';
@@ -2738,7 +2753,7 @@ async function handleScanAsync(code, format, frame){
     const exp = hostsOf(mode === 'old' ? t.oldDevice : t.newDevice);
     if(!m && sn){
       (t.scans ||= []).push({ code: sn, sn, what: label + (mode === 'old' ? '' : ' (Seriennr.)'), at: new Date().toISOString() });
-      save(); openFinish(t.id);
+      save(); if(!scan.keep) openFinish(t.id);
       flash(null, `Seriennr. ${sn}`, mode === 'old' ? 'Gespeichert – Asset-ID später am PC nachschlagen' : 'Gespeichert');
       return;
     }
@@ -2753,7 +2768,7 @@ async function handleScanAsync(code, format, frame){
     else if(isAssetCode(code)) flash(null, 'Gespeichert – nicht geprüft', `Asset ${code} · im Ticket steht kein Hostname zum Vergleichen`);
     else flash(null, 'Gespeichert', code);
     (t.scans ||= []).push({ code, host, what: m === label ? label : label + ' (gescannt)', check: m === label ? 'ok' : host ? 'falsch' : '', at: new Date().toISOString() });
-    save(); openFinish(t.id);
+    save(); if(!scan.keep) openFinish(t.id);
     return;
   }
   if(scan.mode === 'ticket'){
@@ -2770,10 +2785,15 @@ async function handleScanAsync(code, format, frame){
         else { readInfo = 'Hostname auf dem Etikett nicht lesbar.'; flash(null, 'Hostname nicht lesbar', 'Etikett gerade, nah und hell halten.', [{ label:'Nochmal scannen', fn: () => openScanner('ticket', t.id) }, { label:'Selbst zuordnen', fn: () => {} }]); }
       } else { readInfo = 'Im Ticket steht kein Hostname zum Vergleichen.'; flash(null, 'Nicht geprüft', `Asset ${code} · im Ticket steht kein Hostname zum Vergleichen`); }
     }
+    if(!what && scan.keep){   // Dauermodus: unklare Codes trotzdem speichern, später prüfen
+      t.scans = (t.scans || []).filter(x => normCode(x.code) !== normCode(code));
+      (t.scans ||= []).push({ code, host, what:'Gescannt (unklar)', check:'', at: new Date().toISOString() });
+      save(); flash(null, 'Gespeichert – unklar', code + ' · später im Ticket zuordnen'); return;
+    }
     if(what){
       t.scans = (t.scans || []).filter(x => normCode(x.code) !== normCode(code));
       (t.scans ||= []).push({ code, host, what, check:'ok', at: new Date().toISOString() });
-      save(); openDetail(t.id);
+      save(); if(!scan.keep) openDetail(t.id);
       flash(true, what === 'Neues Gerät' || what === 'Altes Gerät' ? `${what} stimmt` : `Passt zu: ${what}`, host ? `${host} · Asset ${code}` : code);
       return;
     }
