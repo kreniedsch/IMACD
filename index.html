@@ -2855,7 +2855,7 @@ function deviceType(code, desc){
   if(PERI_RE.test(desc || '')) return 'Peripherie';
   if(HOST_RE.test(d)) return 'Host';
   if(/^(42|62)\d{8}$/.test(code || '')) return 'Peripherie';
-  if(/^(32|72)\d{8}$/.test(code || '')) return 'Host';
+  if(/^(22|32)\d{8}$/.test(code || '')) return 'Host';      // 62/72 = Docks → Peripherie (Default unten)
   return 'Peripherie';
 }
 const ST_ALT = 'Alt (zurück)', ST_NEU = 'Neu (ausgeliefert)';
