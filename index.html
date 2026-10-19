@@ -1069,7 +1069,7 @@ function groupOf(text){
 }
 const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['Umzug','Umzug'],['all','Alle']];
 const viewGroup = () => state.settings.view || 'all';
-const visible = t => viewGroup() === 'all' || viewGroup() === 'Umzug' || (t.group || '') === viewGroup();
+const visible = t => !t.cancelled && (viewGroup() === 'all' || viewGroup() === 'Umzug' || (t.group || '') === viewGroup());
 function isForMe(text, myTech){
   if(!myTech) return true;
   const kat = String(text).match(/^\W{0,3}(?:kategorien|categories)\s*:?(.*)$/im);
@@ -1903,6 +1903,7 @@ function openDetail(id){
       ${t.ticket?`<button class="qa-b" data-act="copy" data-v="${esc(t.ticket)}">${ICON.copy}Nr. kopieren</button>`:`<span class="qa-b dis">${ICON.copy}Nr. kopieren</span>`}
       <button class="qa-b ${t.done?'':'green'}" data-act="done" data-id="${t.id}">${ICON.checkc}${t.done?'Wieder offen':'Erledigt'}</button>
     </div>
+    <div class="group" style="margin:0 0 14px"><div class="row ic tap" data-act="${t.cancelled ? 'uncancel' : 'cancel'}" data-id="${t.id}"><span class="sq" style="--c:var(--${t.cancelled ? 'blue' : 'red'})">${ICON.warn}</span><span class="k ${t.cancelled ? 'blue' : 'red'}">${t.cancelled ? 'Storno rückgängig machen' : 'Storniert – Geräte zurück ins Regal'}</span></div></div>
     ${callLabel(t, plannedStart(t)) ? `<div class="callwarn big">${ICON.phone}<span><b>${esc(callLabel(t, plannedStart(t)))}</b>${t.callNote ? `<br><small>«${esc(t.callNote)}»</small>` : ''}</span></div>` : ''}
     ${t.techInfo ? `<div class="techinfo big">${ICON.warn}<span><b>Info an Techniker</b><br>${esc(t.techInfo)}</span></div>` : ''}
     ${!t.done ? clashWith(t, clashes(t.date)).map(o => `<div class="techinfo big">${ICON.warn}<span><b>Gleichzeitig noch ein Termin</b><br>${esc(clashText(o).replace(/^Gleichzeitig: /,''))}<br><small>Mit der Dispo klären.</small></span></div>`).join('') : ''}
@@ -3036,6 +3037,13 @@ document.addEventListener('click', e => {
     case 'introPlay': playIntro(); break;
     case 'lagerSort': state.settings.lagerSort = b.dataset.v; save(); renderPlan(); break;
     case 'openMissing': openMissing(b.dataset.v || 'day'); break;
+    case 'cancel': {
+      const t = state.tickets.find(x => x.id === id); if(!t) break;
+      const back = t.picked ? (t.shelf || 'Lager') : '';
+      t.cancelled = true; t.picked = false; t.packed = {}; t.printed = false; save(); closeSheet(); renderPlan();
+      toast(back ? `Storniert – Geräte zurück auf ${back}` : 'Storniert – aus der Planung genommen'); break;
+    }
+    case 'uncancel': { const t = state.tickets.find(x => x.id === id); if(t){ t.cancelled = false; save(); closeSheet(); renderPlan(); toast('Storno rückgängig gemacht'); } break; }
     case 'printed': { const t = state.tickets.find(x => x.id === id); if(t){ t.printed = !t.printed; save(); renderPlan(); } break; }
     case 'printAll': printTickets(state.tickets.filter(t => t.date === view.date && visible(t) && !t.done && needsPrint(t) && !t.printed)); break;
     case 'printOne': printTickets([state.tickets.find(x => x.id === id)].filter(Boolean)); break;
