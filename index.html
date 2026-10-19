@@ -1933,6 +1933,7 @@ function openDetail(id){
         <span class="sq" style="--c:var(--${/^(Neues|Altes) Gerät$/.test(sc.what) ? 'green' : /zugeordnet/.test(sc.what) ? 'blue' : 'indigo'})">${sc.what ? ICON.check : ICON.qr}</span>
         <div class="k"><div class="fx1 ellip">${esc(sc.code)}${sc.host ? ` · <span style="color:var(--${sc.check === 'falsch' || /gescannt/.test(sc.what||'') ? 'red' : 'green'})">${esc(sc.host)}</span>` : ''}</div><div class="fx2">${esc(sc.what || 'passt zu keinem Gerät')} · ${new Date(sc.at).toLocaleTimeString('de-CH',{hour:'2-digit',minute:'2-digit'})}</div></div>
         <button class="callbtn" style="--green:var(--blue)" data-act="copy" data-v="${esc(sc.code)}" aria-label="Kopieren">${ICON.copy}</button>
+        ${/^(Alt|Neu)/.test(sc.what || '') ? `<button class="callbtn" style="--green:var(--orange)" data-act="swapScan" data-id="${t.id}" data-i="${i}" aria-label="Alt/Neu tauschen">⇄</button>` : ''}
         <button class="callbtn" style="--green:var(--red)" data-act="delScan" data-id="${t.id}" data-i="${i}" aria-label="Löschen">${ICON.trash}</button>
       </div>`).join('')}
       <div class="row ic tap" data-act="scanTicket" data-id="${t.id}"><span class="sq" style="--c:var(--blue)">${ICON.qr}</span><span class="k blue">Gerät scannen (QR / Barcode)</span><span class="chev">${ICON.chev}</span></div>
@@ -3089,6 +3090,11 @@ document.addEventListener('click', e => {
       save(); openDetail(id); toast(b.dataset.w ? `${b.dataset.w}: ${b.dataset.v} gespeichert` : 'Gespeichert'); break;
     }
     case 'delScanF': { const t = state.tickets.find(x => x.id === id); if(t && t.scans){ t.scans.splice(+b.dataset.i, 1); save(); openFinish(id); } break; }
+    case 'swapScan': {   // Fehlzuordnung Alt ↔ Neu korrigieren
+      const t = state.tickets.find(x => x.id === id), sc = t && t.scans && t.scans[+b.dataset.i]; if(!sc) break;
+      sc.what = /^Alt/.test(sc.what) ? sc.what.replace(/^Altes/, 'Neues') : sc.what.replace(/^Neues/, 'Altes');
+      save(); openDetail(id); toast(sc.what); break;
+    }
     case 'delScan': { const t = state.tickets.find(x => x.id === id); if(t && t.scans){ t.scans.splice(+b.dataset.i, 1); save(); openDetail(id); } break; }
     case 'pickDay': view.date = b.dataset.d; renderPlan(); break;
     case 'weekPrev': view.date = addDays(view.date,-7); renderPlan(); break;
