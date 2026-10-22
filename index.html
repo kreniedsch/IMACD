@@ -442,7 +442,7 @@ nav.tabs button.on{color:var(--blue)}
 
   <section id="tab-scan" hidden>
     <div class="lt"><div class="lt-l"><div class="eyebrow">IMACD</div><h1>Erfassen</h1></div></div>
-    <div class="warn" id="previewWarn" hidden style="margin:0 0 4px"><span data-icon="warn"></span><div><b>Vorschau-Modus</b><br>Kamera-Erkennung und KI funktionieren nur, wenn die App in Safari über GitHub Pages geöffnet ist. «Text einfügen» klappt auch hier.</div></div>
+    <div class="warn" id="previewWarn" hidden style="margin:0 0 4px"><span data-icon="warn"></span><div><b>Vorschau-Modus</b><br>Kamera-Erkennung funktioniert nur, wenn die App in Safari über GitHub Pages geöffnet ist. «Text einfügen» klappt auch hier.</div></div>
     <div class="glabel" style="margin-top:6px">Mein Kalender</div>
     <div class="seg" id="viewSeg"></div>
     <div class="gfoot">Der Tagesplan zeigt nur diesen Kalender. Beim Import werden immer alle Termine übernommen – Outlook-Kalender als .ics mit «Vollständige Details» laden.</div>
@@ -1149,7 +1149,7 @@ const ICON = {
 
 /* ===================== SPEICHER ===================== */
 const STORE = 'einsatzplan.v1';
-const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:10, ocrLang:'deu+eng', tech:'', view:'all', nav:'google', aiOn:false, aiProvider:'gemini', aiKey:'', aiModel:'claude-sonnet-5-5', gemKey:'', gemModel:'gemini-3.6-flash' };
+const DEFAULTS = { dayStart:'07:30', dayEnd:'17:00', dur:45, travel:10, ocrLang:'deu+eng', tech:'', view:'all', nav:'google' };
 let state = load();
 function load(){
   try{
@@ -1733,9 +1733,7 @@ function renderScan(){
     .map(([v,l]) => `<button class="${pm===v?'on':''}" data-act="pmode" data-v="${v}">${l}</button>`).join('');
 
   $('#previewWarn').hidden = !inPreview;
-  $('#scanFoot').innerHTML = aiReady()
-    ? (state.settings.aiProvider === 'claude' ? 'KI-Erkennung mit Claude ist aktiv.<br>Fotos werden zur Auswertung an Anthropic gesendet.' : 'KI-Erkennung mit Gemini ist aktiv.<br>Fotos werden zur Auswertung an Google gesendet.')
-    : 'Die Texterkennung läuft direkt auf dem iPhone.<br>Es wird nichts hochgeladen.';
+  $('#scanFoot').innerHTML = 'Die Texterkennung läuft direkt auf dem iPhone.<br>Es wird nichts hochgeladen.';
   const el = $('#pendingList');
   if(!state.pending.length){ el.innerHTML = ''; return; }
   let h = `<div class="glabel">Zu prüfen · ${state.pending.length}<button class="txtbtn bold" data-act="acceptAll">Alle übernehmen</button></div>`;
@@ -1797,26 +1795,6 @@ function renderData(){
     <div class="group form" style="margin-top:14px"><div class="row"><label class="k grow" for="sIntro">Intro beim ersten Start am Tag</label><input type="checkbox" class="switch" id="sIntro" data-set="introOn" ${S.introOn !== false ? 'checked' : ''}></div>
       <div class="row tap" data-act="introPlay"><span class="k blue">Intro jetzt ansehen</span></div></div>
     <div class="gfoot">Zeigt Termine, die höchstens ${NEAR_MIN} Min. zu Fuss auseinanderliegen. Dafür wird nur die Adresse (Strasse und Nr.) an die Adresssuche des Bundes (geo.admin.ch) geschickt – keine Namen oder Ticketdaten.</div>
-
-    <div class="glabel">KI-Erkennung</div>
-    <div class="group form">
-      <div class="row"><label class="k grow" for="sAiOn">KI verwenden</label><input type="checkbox" class="switch" id="sAiOn" data-set="aiOn" ${S.aiOn?'checked':''}></div>
-      <div class="row"><span class="k grow">Anbieter</span><div class="seg sm" style="width:200px">
-        <button class="${S.aiProvider!=='claude'?'on':''}" data-act="aiProv" data-v="gemini">Gemini (gratis)</button>
-        <button class="${S.aiProvider==='claude'?'on':''}" data-act="aiProv" data-v="claude">Claude</button></div></div>
-      ${S.aiProvider !== 'claude' ? `
-      <div class="row"><label class="k" for="sGemKey">API-Key</label><input type="password" id="sGemKey" data-set="gemKey" value="${esc(S.gemKey)}" placeholder="AIza…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-      <div class="row"><label class="k" for="sGemModel">Modell</label><input type="text" id="sGemModel" data-set="gemModel" value="${esc(S.gemModel)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>` : `
-      <div class="row"><label class="k" for="sAiKey">API-Key</label><input type="password" id="sAiKey" data-set="aiKey" value="${esc(S.aiKey)}" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
-      <div class="row"><label class="k grow" for="sAiModel">Modell</label>
-        <select id="sAiModel" data-set="aiModel">
-          <option value="claude-sonnet-5-5" ${S.aiModel==='claude-sonnet-5-5'?'selected':''}>Sonnet 5.5 (genau)</option>
-          <option value="claude-haiku-5-5" ${S.aiModel==='claude-haiku-5-5'?'selected':''}>Haiku 5.5 (günstig)</option>
-        </select></div>`}
-    </div>
-    <div class="gfoot">${S.aiProvider !== 'claude'
-      ? 'Gratis-Key unter aistudio.google.com → «Get API key». Mit Tageslimit. <b>Achtung:</b> Im Gratis-Tarif darf Google die Inhalte zur Verbesserung seiner Produkte verwenden – die Fotos enthalten Namen und Telefonnummern von Mitarbeitenden der Stadt. Vorher mit OIZ bzw. Dplan klären.'
-      : 'Key unter console.anthropic.com; jede Auswertung wird verrechnet. Fotos werden an Anthropic gesendet – vorher mit OIZ bzw. Dplan klären.'} Der Key bleibt nur auf diesem iPhone und ist nicht im Backup.</div>
 
     <div class="glabel">Lokale Texterkennung</div>
     <div class="group form">
@@ -2184,134 +2162,6 @@ function acceptOne(id){
   state.pending = state.pending.filter(x => x.id !== id);
 }
 
-/* ===================== KI-ERKENNUNG (Claude) ===================== */
-const AI_PROMPT = `Du liest Arbeitstickets eines IT-Technikers der Stadt Zürich (meist ausgedruckte Outlook-Termine «OIZ-SIBAP Betriebspartner», manchmal Mails oder Helix-Tickets). Erkenne ALLE Tickets und antworte NUR mit JSON, ohne weiteren Text:
-{"tickets":[{"ticket":"","title":"","kind":"","date":"YYYY-MM-DD","start":"HH:MM","end":"HH:MM","flex":false,"technician":null,"address":"","room":"","devices":[],"shelf":"","orderId":"","free":false,"material":"","availUntil":"","techInfo":"","callAhead":null,"winFrom":"","winTo":"","vip":false,"newDevice":"","oldDevice":"","contact":"","phone":"","email":"","task":"","notes":""}]}
-Regeln:
-- ticket: Ticketnummer exakt (z. B. INC000004215474, WO…, REQ…, RITM…).
-- Der Betreff hat oft die Form «E1 / Nummer / Gerät / Ticketnummer / Strasse Nr / Etage Büro / Auftrag». title = der Auftragsteil, z. B. «Austausch: zrhlAFCB L16 G1 (POOL) – Standalone».
-- kind: Austausch, Install, Move, Change, Staging, Rückbau usw. – sonst leer.
-- date/start/end aus «Beginn» und «Ende».
-- flex: true NUR wenn das Wort «Flex» vorkommt (meist bei «Kategorien»), sonst false.
-- technician: Zahl aus «Techniker N» (z. B. 2), sonst null.
-- address: Strasse und Nummer, mit PLZ/Ort falls vorhanden. room: Etage/Büro/Raum.
-- Der Betreff besteht aus Teilen, getrennt durch «/». Die Reihenfolge kann wechseln – ordne jeden Teil nach seinem Muster zu:
-  · shelf: Regalplatz der Ware, Buchstabe + Zahl am Anfang (z. B. «C1», «B2»). Bei Abbau fehlt er.
-  · orderId: 6-stellige Auftrags-ID (z. B. 250880). Steht «KOSTENLOS ohne Auftrag», gibt es keine: orderId leer, free=true.
-  · material: Lieferpositionen wie «1x kabellose Maus / Tastatur». Bei «Austausch: 2x HP E243i Monitor => Lenovo Monitor T24-40» ist oldDevice «2x HP E243i Monitor» und material «2x Lenovo Monitor T24-40».
-  · Mehrere Aufträge wie «250955, 4200062895 + 250956, 4200063467»: orderId «250955, 250956», newDevice «4200062895, 4200063467».
-- callAhead: Wenn der Kunde vorher angerufen werden will: Minuten vorher als Zahl (z. B. 60 bei «1h vorher anrufen»), 0 wenn ohne Zeitangabe, sonst null.
-- techInfo: Text nach «Info an Techniker:» bzw. «An Techniker:» wörtlich (Hinweise an den «Stager» weglassen), sonst leer.
-- availUntil: steht z. B. «nur bis 10:00 Uhr vor Ort», dann «10:00», sonst leer.
-- winFrom/winTo: Zeitfenster aus «Ort:», z. B. «ab 11 Uhr» → winFrom «11:00»; «zwischen 13:30 und 14:00 Uhr» → «13:30»/«14:00».
-- vip: true, wenn «VIP» im Betreff steht. «Abholung:»/«Abbau:» = altes Gerät (kein Regal), «Aufbau:» = material.
-- Abwesende Personen («Abwesend: …») nicht als contact, sondern in notes.
-  · newDevice: neues Gerät – Hostname (z. B. ZRHLAC52) ODER Asset-ID aus 8–12 Ziffern (z. B. 6200036652).
-  · ticket: INC/WO/REQ-Nummer.
-  · address und room: Strasse/Nr. sowie Etage/Büro.
-  · oldDevice: altes Gerät nach «Austausch:» oder «Abbau:» (z. B. «zrhlAA58 L13 Yoga G5»).
-- devices: alle Computernamen wie ZRHLAFCB (Grossbuchstaben).
-- contact/phone/email: erste Kontaktperson (Name steht über E-Mail/Telefon). Weitere Kontaktpersonen in notes.
-- Adressen wie «Zürich_Walchestrasse 31/33» als «Walchestrasse 31/33, Zürich». «Loge» ist ein Raum.
-- task: der Auftrag in einem Satz (z. B. «Auf Grass Barbara aozbagr als POOL stagen»).
-- notes: weitere wichtige Hinweise, kurz.
-- Fehlt ein Wert: leerer String. Nichts erfinden.`;
-
-function blobToB64(blob){
-  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = rej; r.readAsDataURL(blob); });
-}
-async function imageToJpegB64(file){
-  let bmp;
-  try{ bmp = await createImageBitmap(file, { imageOrientation:'from-image' }); }
-  catch(e){ bmp = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); }); }
-  const max = 1800, w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, sc = Math.min(1, max / Math.max(w, h));
-  const c = document.createElement('canvas'); c.width = Math.round(w*sc); c.height = Math.round(h*sc);
-  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
-  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
-  return blobToB64(blob);
-}
-const GEM_FALLBACK = ['gemini-3.6-flash','gemini-3.8-flash','gemini-3.5-flash-lite','gemini-3.1-flash-lite','gemini-3-flash-preview'];
-async function aiExtractGemini(input){
-  const S = state.settings;
-  let part;
-  if(typeof input === 'string') part = { text:'Ticket-Text:\n\n' + input };
-  else if(input.type === 'application/pdf' || /\.pdf$/i.test(input.name)) part = { inline_data:{ mime_type:'application/pdf', data: await blobToB64(input) } };
-  else part = { inline_data:{ mime_type:'image/jpeg', data: await imageToJpegB64(input) } };
-  const models = [...new Set([(S.gemModel || DEFAULTS.gemModel).trim(), ...GEM_FALLBACK])];
-  let lastErr = null;
-  for(const model of models){
-    for(let attempt = 0; attempt < 2; attempt++){
-      setProg(progLabel + ' – KI liest (' + model + ') …', 0.3 + attempt * 0.2);
-      let r, data;
-      try{
-        r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent', {
-          method:'POST',
-          headers:{ 'content-type':'application/json', 'x-goog-api-key':S.gemKey },
-          body: JSON.stringify({ contents:[{ role:'user', parts:[part, { text:AI_PROMPT }] }], generationConfig:{ responseMimeType:'application/json', temperature:0 } })
-        });
-        data = await r.json().catch(() => ({}));
-      }catch(e){ lastErr = new Error('Keine Verbindung zur KI'); await new Promise(z => setTimeout(z, 1200)); continue; }
-      if(r.ok){
-        const txt = ((data.candidates || [])[0]?.content?.parts || []).map(p => p.text || '').join('');
-        const m = txt.match(/\{[\s\S]*\}/); if(!m){ lastErr = new Error('KI-Antwort nicht lesbar'); break; }
-        const j = JSON.parse(m[0]);
-        return Array.isArray(j.tickets) ? j.tickets : [];
-      }
-      const msg = data.error && data.error.message || ('HTTP '+r.status);
-      if((r.status === 400 || r.status === 403) && /api key|permission|unauthori/i.test(msg)) throw new Error('API-Key ungültig');
-      lastErr = new Error(r.status === 429 ? 'Gratis-Kontingent aufgebraucht' : r.status >= 500 || /demand|overload|unavailable/i.test(msg) ? 'KI gerade überlastet' : msg);
-      if(r.status === 404 || r.status === 400) break;                         // Modell nicht verfügbar → nächstes
-      if(r.status === 429) break;                                              // eigenes Kontingent pro Modell → nächstes
-      await new Promise(z => setTimeout(z, 1500 * (attempt + 1)));             // überlastet → kurz warten, nochmals
-    }
-  }
-  throw lastErr || new Error('KI nicht erreichbar');
-}
-async function aiExtract(input){
-  const S = state.settings;
-  if(S.aiProvider !== 'claude') return aiExtractGemini(input);
-  let part;
-  if(typeof input === 'string') part = { type:'text', text:'Ticket-Text:\n\n' + input };
-  else if(input.type === 'application/pdf' || /\.pdf$/i.test(input.name)) part = { type:'document', source:{ type:'base64', media_type:'application/pdf', data: await blobToB64(input) } };
-  else part = { type:'image', source:{ type:'base64', media_type:'image/jpeg', data: await imageToJpegB64(input) } };
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method:'POST',
-    headers:{ 'content-type':'application/json', 'x-api-key':S.aiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
-    body: JSON.stringify({ model:S.aiModel || DEFAULTS.aiModel, max_tokens:4000, messages:[{ role:'user', content:[part, { type:'text', text:AI_PROMPT }] }] })
-  });
-  const data = await r.json().catch(() => ({}));
-  if(!r.ok){
-    const msg = data.error && data.error.message || ('HTTP '+r.status);
-    if(r.status === 401) throw new Error('API-Key ungültig');
-    throw new Error(msg);
-  }
-  const txt = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-  const m = txt.match(/\{[\s\S]*\}/); if(!m) throw new Error('KI-Antwort nicht lesbar');
-  const j = JSON.parse(m[0]);
-  return Array.isArray(j.tickets) ? j.tickets : [];
-}
-function aiToTicket(o, fallbackDate){
-  const str = v => (v == null ? '' : String(v)).trim();
-  const hm = v => { const m = str(v).match(/^(\d{1,2})[:.](\d{2})/); return m ? pad2(m[1])+':'+m[2] : ''; };
-  const t = { id:uid(), ticket:str(o.ticket).toUpperCase().replace(/\s/g,''), kind:str(o.kind), title:str(o.title || o.task),
-    date: /^\d{4}-\d{2}-\d{2}$/.test(str(o.date)) ? str(o.date) : fallbackDate,
-    start:hm(o.start), end:hm(o.end), flex: o.flex === true || /^(true|ja|yes)$/i.test(str(o.flex)), dur:null,
-    address:str(o.address), room:str(o.room), contact:str(o.contact), phone: o.phone ? fmtPhone(str(o.phone)) : '',
-    email:str(o.email), devices: (Array.isArray(o.devices) ? o.devices : str(o.devices).split(/[,;\s]+/)).map(d => str(d).toUpperCase()).filter(Boolean).join(', '),
-    notes: [o.task && str(o.task) !== str(o.title) ? 'Auftrag: '+str(o.task) : '', str(o.notes)].filter(Boolean).join('\n'),
-    shelf:str(o.shelf).toUpperCase(), orderId:str(o.orderId), material:str(o.material), free: o.free === true, availUntil: hm(o.availUntil), techInfo: str(o.techInfo), callAhead: Number.isFinite(+o.callAhead) && o.callAhead !== null && o.callAhead !== '' ? +o.callAhead : null, winFrom: hm(o.winFrom), winTo: hm(o.winTo), vip: o.vip === true, newDevice:str(o.newDevice).toUpperCase(), oldDevice:str(o.oldDevice),
-    group: parseInt(o.technician, 10) >= 1 && parseInt(o.technician, 10) <= 3 ? 'T' + parseInt(o.technician, 10) : '',
-    raw: 'Mit KI erkannt (' + (state.settings.aiProvider === 'claude' ? 'Claude' : 'Gemini') + ')', done:false, ai:true };
-  if(t.start && t.end){ const d = toMin(t.end) - toMin(t.start); if(d > 0) t.dur = d; }
-  return t;
-}
-function addAiTickets(list, date){
-  let n = 0;
-  for(const o of list){ state.pending.push(aiToTicket(o, date)); n++; }
-  save(); renderScan(); return n;
-}
-const aiReady = () => state.settings.aiOn && (state.settings.aiProvider === 'claude' ? state.settings.aiKey : state.settings.gemKey);
-
 /* ===================== OCR / PDF ===================== */
 const TESS_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
 const PDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -2437,13 +2287,6 @@ async function processBatch(files){
       shot++;
       progLabel = files.length > 1 ? `Blatt ${i+1}/${files.length}` : `Blatt ${shot}`;
       setProg(progLabel+' …', 0);
-      if(aiReady() && !/\.ics$/i.test(f.name) && f.type !== 'text/calendar'){
-        try{
-          setProg(progLabel+' – KI liest das Ticket …', 0.5);
-          n += addAiTickets(await aiExtract(f), date);
-          continue;
-        }catch(err){ console.error(err); toast('KI: '+errMsg(err)+' – lokale Erkennung wird verwendet'); await new Promise(r => setTimeout(r, 1200)); }
-      }
       if(f.type === 'text/calendar' || /\.ics$/i.test(f.name)){
         const icsTxt = await f.text();
         const ts = icsToBlocks(icsTxt).filter(b => b.replace(/\s/g,'').length >= 15).map(b => parseBlock(b, date)).filter(t => t.group !== 'Post');   // Post-Versand wird nicht gebraucht
@@ -2488,7 +2331,7 @@ async function deliver(name, content, mime, preferShare){
   return true;
 }
 async function backup(){
-  const { aiKey, gemKey, ...safeSettings } = state.settings;
+  const safeSettings = state.settings;
   const files = {};
   try{ for(const k of await IDB.keys()){ const r = await IDB.get(k); if(r && (r.blob || r.data)) files[k] = { name:r.name, type:r.type || '', b64: await bytesToB64(r.blob || new Blob([r.data])), tpl: !!r.data }; } }catch(e){ console.error(e); }
   const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending, hwlc:state.hwlc || {}, moves:state.moves || [], files };
@@ -2503,7 +2346,7 @@ async function importBackup(file){
     d.tickets.forEach(t => byId.set(t.id, t));
     state.tickets = [...byId.values()];
     if(Array.isArray(d.pending)){ const ids = new Set(state.pending.map(p=>p.id)); d.pending.forEach(p => { if(!ids.has(p.id)) state.pending.push(p); }); }
-    if(d.settings) state.settings = { ...DEFAULTS, ...d.settings, aiKey: state.settings.aiKey, gemKey: state.settings.gemKey };
+    if(d.settings) state.settings = { ...DEFAULTS, ...d.settings };
     if(d.hwlc && typeof d.hwlc === 'object') state.hwlc = { ...(state.hwlc || {}), ...d.hwlc };
     if(Array.isArray(d.moves)){ const ids = new Set((state.moves || []).map(m => m.id)); state.moves = [...(state.moves || []).map(m => d.moves.find(x => x.id === m.id) || m), ...d.moves.filter(m => !ids.has(m.id))]; }
     if(d.files && typeof d.files === 'object') for(const [k, f] of Object.entries(d.files)){ try{ const bytes = b64ToBytes(f.b64); await IDB.put(k, f.tpl ? { name:f.name, data:bytes.buffer, at:new Date().toISOString() } : { name:f.name, type:f.type, blob:new Blob([bytes], { type:f.type }) }); }catch(e){ console.error(e); } }
@@ -3121,7 +2964,6 @@ document.addEventListener('click', e => {
     case 'discard': state.pending = state.pending.filter(x => x.id !== id); save(); renderAll(); break;
     case 'view': state.settings.view = b.dataset.v; save(); renderScan(); renderPlan();
       toast(b.dataset.v === 'all' ? 'Tagesplan zeigt alle Kalender' : `Tagesplan zeigt ${b.dataset.v === 'HWLC' ? 'HWLC' : b.dataset.v === 'Umzug' ? 'Umzug' : 'Techniker ' + b.dataset.v.slice(1)}`); break;
-    case 'aiProv': state.settings.aiProvider = b.dataset.v; save(); renderData(); renderScan(); break;
     case 'pmode': $('#photoMode').value = b.dataset.v; renderScan(); break;
     case 'openPaste': openPaste(); break;
     case 'pasteClip':
@@ -3135,11 +2977,7 @@ document.addEventListener('click', e => {
       closeSheet();
       (async () => {
         let n = 0;
-        if(aiReady() && !/BEGIN:VEVENT/i.test(tx)){
-          try{ setProg('KI liest den Text …', 0.5); n = addAiTickets(await aiExtract(tx), date); }
-          catch(err){ toast('KI: '+errMsg(err)+' – lokale Erkennung wird verwendet'); n = addCandidates(textToBlocks(tx), date); }
-          finally{ endProg(); }
-        } else n = addCandidates(textToBlocks(tx), date);
+        n = addCandidates(textToBlocks(tx), date);
         toast(foundMsg(n));
         if(n) setTimeout(() => $('#pendingList').scrollIntoView({ behavior:'smooth', block:'start' }), 350);
       })();
@@ -3291,13 +3129,6 @@ document.addEventListener('change', e => {
   if(k === 'nav'){ state.settings.nav = e.target.value; save(); renderPlan(); toast('Gespeichert'); return; }
   if(k === 'introOn'){ state.settings.introOn = e.target.checked; save(); toast(e.target.checked ? 'Intro an' : 'Intro aus'); return; }
   if(k === 'geoOn'){ state.settings.geoOn = e.target.checked; save(); renderPlan(); toast(e.target.checked ? 'Nähe-Anzeige an' : 'Nähe-Anzeige aus'); return; }
-  if(k === 'aiOn' || k === 'aiKey' || k === 'aiModel' || k === 'gemKey' || k === 'gemModel'){
-    state.settings[k] = k === 'aiOn' ? e.target.checked : e.target.value.trim();
-    save(); renderScan();
-    if(k === 'aiOn' && e.target.checked && !aiReady()) toast('Bitte noch den API-Key eintragen');
-    else toast(k === 'aiOn' ? (e.target.checked ? 'KI-Erkennung aktiviert' : 'KI-Erkennung aus') : 'Gespeichert');
-    return;
-  }
   if(k){
     let v = e.target.value;
     if(k === 'dur') v = Math.max(5, +v || DEFAULTS.dur);
