@@ -442,6 +442,7 @@ nav.tabs button.on{color:var(--blue)}
 
   <section id="tab-scan" hidden>
     <div class="lt"><div class="lt-l"><div class="eyebrow">IMACD</div><h1>Erfassen</h1></div></div>
+    <div class="group" style="margin:0 0 14px"><div class="row ic tap" data-act="quarIn"><span class="k">Quarantäne buchen</span></div><div class="row ic tap" data-act="quarChk"><span class="k">Quarantäne prüfen (wipe ja/nein)</span></div></div>
     <div class="warn" id="previewWarn" hidden style="margin:0 0 4px"><span data-icon="warn"></span><div><b>Vorschau-Modus</b><br>Kamera-Erkennung funktioniert nur, wenn die App in Safari über GitHub Pages geöffnet ist. «Text einfügen» klappt auch hier.</div></div>
     <div class="glabel" style="margin-top:6px">Mein Kalender</div>
     <div class="seg" id="viewSeg"></div>
@@ -1164,9 +1165,9 @@ function load(){
     if(s && Array.isArray(s.tickets)){ s.tickets = s.tickets.filter(t => t.group !== 'Post'); if(s.settings && s.settings.view === 'Post') s.settings.view = 'all'; }
     if(s && Array.isArray(s.tickets)) s.tickets.forEach(t => { try{ pickupFix(t, t.raw); }catch(e){} });
     if(s && s.settings && s.settings.noteTpl) for(const k of Object.keys(s.settings.noteTpl)) if(tplSpecific(s.settings.noteTpl[k])) delete s.settings.noteTpl[k];
-    if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null, hwlc:s.hwlc||{}, moves:s.moves||[] };
+    if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null, hwlc:s.hwlc||{}, moves:s.moves||[], quarantine:s.quarantine||{} };
   }catch(e){}
-  return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null, hwlc:{}, moves:[] };
+  return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null, hwlc:{}, moves:[], quarantine:{} };
 }
 function save(){
   try{ localStorage.setItem(STORE, JSON.stringify(state)); }
@@ -2334,7 +2335,7 @@ async function backup(){
   const safeSettings = state.settings;
   const files = {};
   try{ for(const k of await IDB.keys()){ const r = await IDB.get(k); if(r && (r.blob || r.data)) files[k] = { name:r.name, type:r.type || '', b64: await bytesToB64(r.blob || new Blob([r.data])), tpl: !!r.data }; } }catch(e){ console.error(e); }
-  const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending, hwlc:state.hwlc || {}, moves:state.moves || [], files };
+  const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending, hwlc:state.hwlc || {}, moves:state.moves || [], quarantine:state.quarantine || {}, files };
   const ok = await deliver(`imacd-backup-${iso(new Date())}.json`, JSON.stringify(data, null, 1), 'application/json', true);
   if(ok){ state.lastBackup = new Date().toISOString(); save(); renderAll(); toast('Backup erstellt'); }
 }
@@ -2348,6 +2349,7 @@ async function importBackup(file){
     if(Array.isArray(d.pending)){ const ids = new Set(state.pending.map(p=>p.id)); d.pending.forEach(p => { if(!ids.has(p.id)) state.pending.push(p); }); }
     if(d.settings) state.settings = { ...DEFAULTS, ...d.settings };
     if(d.hwlc && typeof d.hwlc === 'object') state.hwlc = { ...(state.hwlc || {}), ...d.hwlc };
+    if(d.quarantine && typeof d.quarantine === 'object') state.quarantine = { ...(state.quarantine || {}), ...d.quarantine };
     if(Array.isArray(d.moves)){ const ids = new Set((state.moves || []).map(m => m.id)); state.moves = [...(state.moves || []).map(m => d.moves.find(x => x.id === m.id) || m), ...d.moves.filter(m => !ids.has(m.id))]; }
     if(d.files && typeof d.files === 'object') for(const [k, f] of Object.entries(d.files)){ try{ const bytes = b64ToBytes(f.b64); await IDB.put(k, f.tpl ? { name:f.name, data:bytes.buffer, at:new Date().toISOString() } : { name:f.name, type:f.type, blob:new Blob([bytes], { type:f.type }) }); }catch(e){ console.error(e); } }
     save(); renderAll(); toast(`${d.tickets.length} Tickets importiert`);
@@ -2412,7 +2414,7 @@ async function openScanner(mode, id){
   scan.mode = mode; scan.id = id || null; scan.keep = ['old','new','ticket'].includes(mode);
   const t = id && state.tickets.find(x => x.id === id);
   scan.paused = false; scan.ask = null; scan.last = ''; $('#scanMsg').hidden = true;
-  $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : 'Code scannen';
+  $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : mode === 'quarin' ? 'Quarantäne buchen' : mode === 'quar' ? 'Quarantäne prüfen' : 'Code scannen';
   if(CONT_MODES.has(mode)) setTimeout(contTitle, 0);
   $('#scanHint').textContent = (CONT_MODES.has(mode) || scan.keep) ? 'Ein Etikett nach dem anderen scannen – mit ✕ beenden' : mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
   $('#scanner').hidden = false; document.body.style.overflow = 'hidden';
@@ -2998,6 +3000,8 @@ document.addEventListener('click', e => {
     case 'hwlcPick': { state.settings.hwlcKey = b.dataset.k; state.settings.hwlcSheet = ''; const h = state.hwlc[b.dataset.k]; if(h) view.date = h.date; save(); renderPlan(); break; }
     case 'hwlcMode': state.settings.hwlcMode = b.dataset.v; save(); renderHwlc(); break;
     case 'hwlcSheet': state.settings.hwlcSheet = b.dataset.v; save(); renderHwlc(); break;
+    case 'quarIn': openScanner('quarin'); break;
+    case 'quarChk': openScanner('quar'); break;
     case 'hwlcScan': if(!hwlcCur()){ toast('Zuerst Kalender importieren oder Tranche anlegen'); break; } openScanner('hwlc'); break;
     case 'hwlcManual': hwlcManualSheet('hwlc'); break;
     case 'hwlcManAdd': case 'moveManAdd': {
@@ -3718,13 +3722,34 @@ async function moveExcel(mode){
 }
 
 /* ---------- Dauer-Scan (Kamera bleibt offen) für HWLC und Umzug ---------- */
-const CONT_MODES = new Set(['hwlc', 'move']);
+const CONT_MODES = new Set(['hwlc', 'move', 'quarin', 'quar']);
 function contScan(code){
   let sn = '';
   if(isModemCode(code)) return { ok:false, title:'Modem-Code (IMEI)', sub:'Bitte die Asset-ID scannen' };
   if(!isAssetCode(code) && !/^zrh/i.test(code)) sn = snOf(code);
   const c = sn || code;
+  if(scan.mode === 'quarin') return quarBook(c);
+  if(scan.mode === 'quar') return quarCheck(c);
   return scan.mode === 'hwlc' ? hwlcAdd(c) : moveAdd(c);
+}
+/* ===================== QUARANTÄNE (Hosts 48 h) ===================== */
+const QUAR_H = 48;
+const quarCode = code => { let sn = ''; if(!isAssetCode(code) && !/^zrh/i.test(code)) sn = snOf(code); return normCode(sn || code); };
+const quarFmt = d => new Date(d).toLocaleString('de-CH', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+function quarBook(code){
+  const k = quarCode(code); state.quarantine ||= {};
+  const e = state.quarantine[k];
+  if(e) return { ok:null, title:'Schon in Quarantäne', sub:`Seit ${quarFmt(e.since)} · frei ab ${quarFmt(new Date(e.since).getTime() + QUAR_H*3600e3)}` };
+  state.quarantine[k] = { code:k, since:new Date().toISOString() }; save();
+  return { ok:true, title:'In Quarantäne gebucht', sub:`${k} · frei ab ${quarFmt(Date.now() + QUAR_H*3600e3)}` };
+}
+function quarCheck(code){
+  const k = quarCode(code), e = (state.quarantine || {})[k];
+  if(!e) return { ok:null, title:'Nicht in Quarantäne erfasst', sub:k };
+  const until = new Date(e.since).getTime() + QUAR_H*3600e3, left = until - Date.now();
+  if(left <= 0) return { ok:true, title:'Frei – wipe möglich', sub:`${k} · in Quarantäne seit ${quarFmt(e.since)}` };
+  const min = Math.round(left/60e3), h = Math.floor(min/60), m = min % 60;
+  return { ok:null, title:`Noch Quarantäne · ${h} h ${m} min`, sub:`${k} · frei ab ${quarFmt(until)}` };
 }
 function contShow(r){
   const box = $('#scanMsg'); if(!box || !r) return;
