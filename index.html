@@ -3508,11 +3508,13 @@ function hwlcImport(ics){
   for(const e of icsEvents(ics)){
     const sum = icsVal(e, 'SUMMARY');
     if(!/hardware-?life\s?cycle|tranche/i.test(sum) && !/^"?HWLC_/.test(sum)) continue;
-    const km = sum.match(/HWLC_([A-Z]{2,5})_(?:([A-Za-z]+)_)?(\d{2})\.(\d{2})\.(\d{2})/); if(!km) continue;
+    // Schreibweisen: HWLC_GFA_26.10.22 · HWLC_GFA_2026.10.22 · HWLC_Austausch_Monitore_26.10 (Tag dann aus dem Termin)
+    const km = sum.match(/HWLC_([A-Za-z]{2,12})_(?:([A-Za-z]+)_)?(\d{2}|\d{4})\.(\d{2})(?:\.(\d{2}))?/); if(!km) continue;
     const key = km[0], { date, time } = icsDate(e);
+    const tranDate = km[5] ? `${km[3].length === 4 ? km[3] : '20' + km[3]}-${km[4]}-${km[5]}` : date;
     const d = hwlcParseDesc(icsVal(e, 'X-ALT-DESC'), icsVal(e, 'DESCRIPTION'));
     const prev = state.hwlc[key] || {};
-    state.hwlc[key] = { ...prev, key, da: km[1], extra: km[2] || '', date: `20${km[3]}-${km[4]}-${km[5]}` || date, time, title: sum,
+    state.hwlc[key] = { ...prev, key, da: km[1], extra: km[2] || '', date: tranDate || date, time, title: sum,
       ort: d.kv['Ort'] || icsVal(e, 'LOCATION') || '', kontakt: d.kv['Kontaktperson'] || '', spez: d.kv['Standortspezialität'] || '',
       rows: d.rows, notes: d.notes, places: d.places, soll: hwlcSoll(d.rows), items: prev.items || [], updated: new Date().toISOString() };
     found.push(key);
