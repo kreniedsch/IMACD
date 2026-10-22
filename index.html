@@ -1165,6 +1165,7 @@ function load(){
     if(s && Array.isArray(s.tickets)){ s.tickets = s.tickets.filter(t => t.group !== 'Post'); if(s.settings && s.settings.view === 'Post') s.settings.view = 'all'; }
     if(s && Array.isArray(s.tickets)) s.tickets.forEach(t => { try{ pickupFix(t, t.raw); }catch(e){} });
     if(s && s.settings && s.settings.noteTpl) for(const k of Object.keys(s.settings.noteTpl)) if(tplSpecific(s.settings.noteTpl[k])) delete s.settings.noteTpl[k];
+    if(s && s.settings) ['aiKey','gemKey','aiOn','aiProvider','aiModel','gemModel'].forEach(k => delete s.settings[k]);
     if(s && Array.isArray(s.tickets)) return { settings:{...DEFAULTS, ...(s.settings||{})}, tickets:s.tickets, pending:s.pending||[], lastBackup:s.lastBackup||null, hwlc:s.hwlc||{}, moves:s.moves||[], quarantine:s.quarantine||{} };
   }catch(e){}
   return { settings:{...DEFAULTS}, tickets:[], pending:[], lastBackup:null, hwlc:{}, moves:[], quarantine:{} };
@@ -2332,7 +2333,7 @@ async function deliver(name, content, mime, preferShare){
   return true;
 }
 async function backup(){
-  const safeSettings = state.settings;
+  const { aiKey, gemKey, aiOn, aiProvider, aiModel, gemModel, ...safeSettings } = state.settings;
   const files = {};
   try{ for(const k of await IDB.keys()){ const r = await IDB.get(k); if(r && (r.blob || r.data)) files[k] = { name:r.name, type:r.type || '', b64: await bytesToB64(r.blob || new Blob([r.data])), tpl: !!r.data }; } }catch(e){ console.error(e); }
   const data = { app:'einsatzplan', version:1, exported:new Date().toISOString(), settings:safeSettings, tickets:state.tickets, pending:state.pending, hwlc:state.hwlc || {}, moves:state.moves || [], quarantine:state.quarantine || {}, files };
