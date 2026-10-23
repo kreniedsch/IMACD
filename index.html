@@ -1484,6 +1484,19 @@ function syncPlanSec(){
   if(sec === 'hwlc') renderHwlc();
   if(sec === 'move') renderMove();
 }
+const todayIso = () => iso(new Date());
+function teamToday(){
+  const T = state.settings.team || {};
+  if(T.date !== todayIso()) return { date: todayIso() };
+  return { ...T };
+}
+function teamLine(){
+  const T = state.settings.team; if(!T || T.date !== todayIso() || view.date !== T.date) return '';
+  const me = state.settings.tech ? 'T' + state.settings.tech : '';
+  const label = g => g === 'HWLC' ? 'HWLC' : 'Techniker ' + g[1];
+  const parts = ['T1','T2','T3','HWLC'].filter(g => T[g] || g === me).map(g => `${label(g)}${g === me ? ' (du)' : ''}${T[g] ? ': ' + esc(T[g]) : ''}`);
+  return parts.length ? `<div class="gfoot" style="margin:0 0 10px">${parts.join(' · ')}</div>` : '';
+}
 function renderPlanCore(){
   const isToday = view.date === iso(new Date());
   $('#planTitle').textContent = relDay(view.date);
@@ -1493,7 +1506,7 @@ function renderPlanCore(){
   renderWeek(); renderGroups();
 
   const P = plan(view.date), nm = nowMin();
-  let h = '';
+  let h = teamLine();
 
   // Hinweise
   const pend = state.pending.length;
@@ -1783,6 +1796,12 @@ function renderData(){
       <div class="row"><label class="k grow" for="sTravel">Wegzeit</label><input type="number" inputmode="numeric" id="sTravel" data-set="travel" value="${esc(S.travel)}" style="max-width:70px"><span class="v">Min.</span></div>
     </div>
     <div class="gfoot">Flex-Tickets werden automatisch in die Lücken zwischen den Fixterminen geplant – möglichst am gleichen Standort.</div>
+
+    <div class="glabel">Team heute</div>
+    <div class="group form">
+      ${[['T1','Techniker 1'],['T2','Techniker 2'],['T3','Techniker 3'],['HWLC','HWLC']].map(([g,l]) => `<div class="row"><label class="k" for="tm${g}">${l}</label><input type="text" id="tm${g}" data-set="tm_${g}" value="${esc(teamToday()[g] || '')}" placeholder="Name" autocomplete="off" style="text-align:right"></div>`).join('')}
+    </div>
+    <div class="gfoot">Wer ist heute wo eingeteilt? Die Namen erscheinen oben im Tagesplan. Gelten nur für heute.</div>
 
     <div class="glabel">Navigation</div>
     <div class="group form">
@@ -3131,6 +3150,7 @@ document.addEventListener('change', e => {
   if(id === 'inImport' && e.target.files[0]){ importBackup(e.target.files[0]); e.target.value = ''; return; }
   if(id === 'dayInput' && e.target.value){ view.date = e.target.value; renderPlan(); return; }
   const k = e.target.dataset && e.target.dataset.set;
+  if(k && k.startsWith('tm_')){ const T = teamToday(); T[k.slice(3)] = e.target.value.trim(); state.settings.team = T; save(); renderPlan(); return; }
   if(k === 'nav'){ state.settings.nav = e.target.value; save(); renderPlan(); toast('Gespeichert'); return; }
   if(k === 'introOn'){ state.settings.introOn = e.target.checked; save(); toast(e.target.checked ? 'Intro an' : 'Intro aus'); return; }
   if(k === 'geoOn'){ state.settings.geoOn = e.target.checked; save(); renderPlan(); toast(e.target.checked ? 'Nähe-Anzeige an' : 'Nähe-Anzeige aus'); return; }
