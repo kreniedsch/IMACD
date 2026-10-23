@@ -3598,11 +3598,34 @@ function moveNewSheet(){
   setTimeout(() => { const i = $('#mvName'); i && i.focus(); }, 350);
 }
 const tblKey = x => (x.room || '?') + '|' + (x.table || '');
+function recHistAdd(f, v){
+  v = String(v || '').trim(); if(!v) return;
+  const H = (state.settings.recHist ||= {}); const L = (H[f] ||= []);
+  if(!L.includes(v)) L.unshift(v); H[f] = L.slice(0, 12);
+}
+function recFields(cur){
+  const H = (state.settings.recHist || {});
+  const row = (f, label, ph, dl) => `<div class="row"><label class="k" for="mv_${f}">${label}</label><input id="mv_${f}" data-mv="${f}" value="${esc(cur[f] || '')}" list="dl_${f}" placeholder="${ph}" autocomplete="off"><datalist id="dl_${f}">${(H[f] || []).map(v => `<option value="${esc(v)}">`).join('')}</datalist></div>`;
+  return row('std', 'Standort', 'z. B. Amtshaus V', 'std') + row('etage', 'Etage', 'z. B. 2. OG', 'etage') + row('buero', 'Büro / Schalter', 'z. B. Büro 215', 'buero') +
+    `<div class="row"><label class="k" for="mv_table">Schalter-Nr.</label><input id="mv_table" data-mv="table" value="${esc(cur.table || '')}" placeholder="optional" autocomplete="off"></div>`;
+}
 const roomSort = (a, b) => String(a).localeCompare(String(b), 'de', { numeric:true });
 function moveAdd(code, kind, label){
   const m = moveCur(); if(!m) return { ok:false, title:'Kein Umzug angelegt' };
   const cur = m.cur || {};
   const c = code ? String(code).trim().toUpperCase().replace(/\s+/g, '') : '';
+  if(cur.mode === 'rec'){
+    const room = [cur.std, cur.etage, cur.buero].map(v => String(v || '').trim()).filter(Boolean).join(' · ');
+    if(!room) return { ok:false, title:'Standort fehlt', sub:'Oben Standort, Etage oder Büro wählen' };
+    if(!c) return { ok:false, title:'Kein Code' };
+    const ex = m.items.find(x => x.code === c);
+    if(ex) return { ok:null, title:'Schon erfasst', sub:`${c} · ${ex.room || ''}${ex.table ? ' · Schalter ' + ex.table : ''}` };
+    const k = kind || devKind(c) || 'Gerät';
+    m.items.push({ id:uid(), code:c, kind:k, room, table:String(cur.table || '').trim(), lager:'', troom:'', ttable:'', status:'rec', at:new Date().toISOString() });
+    ['std','etage','buero'].forEach(f => recHistAdd(f, cur[f]));
+    save();
+    return { ok:true, title:`${KIND_LABEL[k] || k} ${c}`, sub:room + (cur.table ? ' · Schalter ' + cur.table : '') };
+  }
   if(cur.mode === 'auf'){
     if(!cur.troom) return { ok:false, title:'Zielraum fehlt', sub:'Oben den Zielraum eintragen' };
     const it = c && m.items.find(x => x.code === c);
@@ -3654,7 +3677,8 @@ function renderMove(){
     return;
   }
   const cur = m.cur ||= { mode:'ab', room:'', table:'', lager:'', troom:'', ttable:'' };
-  const ab = cur.mode !== 'auf';
+  const rec = cur.mode === 'rec';
+  const ab = cur.mode !== 'auf' && !rec;
   const rooms = {}; m.items.forEach(x => ((rooms[x.room || '–'] ||= {})[x.table || ''] ||= []).push(x));
   const nAuf = m.items.filter(x => x.status === 'auf').length, nAll = m.items.length;
   const list = Object.keys(rooms).sort(roomSort).map(r => {
@@ -3671,16 +3695,16 @@ function renderMove(){
   el.innerHTML = head + `
     ${M.length > 1 ? `<div class="chips" style="margin:0 0 12px;overflow-x:auto">${M.slice().reverse().map(x => `<button class="chip${x.id === m.id ? ' on' : ''}" data-act="movePick" data-v="${x.id}">${esc(x.name)} <span>${esc(x.date.slice(8, 10) + '.' + x.date.slice(5, 7) + '.')}</span></button>`).join('')}</div>` : ''}
     <div class="card hw-head"><div class="hw-key">${esc(m.name)}</div><div class="hw-sub">${esc(longDate(m.date))} · ${nAll} Geräte · ${nAuf} aufgebaut</div></div>
-    <div class="seg">${[['ab', 'Abbau'], ['auf', 'Aufbau']].map(([v, l]) => `<button class="${cur.mode === v || (v === 'ab' && ab && cur.mode !== 'auf') ? 'on' : ''}" data-act="moveMode" data-v="${v}">${l}</button>`).join('')}</div>
+    <div class="seg">${[['ab', 'Abbau'], ['auf', 'Aufbau'], ['rec', 'Aufnahme']].map(([v, l]) => `<button class="${cur.mode === v || (v === 'ab' && cur.mode !== 'auf' && cur.mode !== 'rec') ? 'on' : ''}" data-act="moveMode" data-v="${v}">${l}</button>`).join('')}</div>
     <div class="group form" style="margin-top:12px">
-      ${ab ? `
+      ${rec ? recFields(cur) : ab ? `
       <div class="row"><label class="k" for="mvRoom">Raum</label><input id="mvRoom" data-mv="room" value="${esc(cur.room)}" placeholder="z. B. Büro 103" autocomplete="off"></div>
       <div class="row"><label class="k" for="mvTable">Tisch-Nr.</label><input id="mvTable" data-mv="table" value="${esc(cur.table)}" placeholder="optional" inputmode="text" autocomplete="off"><button class="pillbtn" data-act="moveNextTable">+1</button></div>
       <div class="row"><label class="k" for="mvLager">Zwischenlager</label><input id="mvLager" data-mv="lager" value="${esc(cur.lager)}" placeholder="optional, z. B. Büro 115" autocomplete="off"></div>` : `
       <div class="row"><label class="k" for="mvTroom">Zielraum</label><input id="mvTroom" data-mv="troom" value="${esc(cur.troom)}" placeholder="z. B. Büro 215" autocomplete="off"></div>
       <div class="row"><label class="k" for="mvTtable">Ziel-Tisch</label><input id="mvTtable" data-mv="ttable" value="${esc(cur.ttable)}" placeholder="optional" autocomplete="off"><button class="pillbtn" data-act="moveNextTable">+1</button></div>`}
     </div>
-    <div class="gfoot">${ab ? 'Alle Asset-IDs im Raum scannen. Mit Tisch-Nr. weiss die App beim Aufbau, was zusammengehört.' : 'Gerät scannen – die App zeigt, aus welchem Raum und Tisch es kommt, und warnt, wenn ein Tisch auseinandergerissen wird.'}</div>
+    <div class="gfoot">${rec ? 'Standort, Etage und Büro bzw. Schalter wählen, dann die Geräte scannen. Die Vorschläge merkt sich die App.' : ab ? 'Alle Asset-IDs im Raum scannen. Mit Tisch-Nr. weiss die App beim Aufbau, was zusammengehört.' : 'Gerät scannen – die App zeigt, aus welchem Raum und Tisch es kommt, und warnt, wenn ein Tisch auseinandergerissen wird.'}</div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="btn-fill" style="flex:2" data-act="moveScan">${ICON.qr}Scannen</button>
       <button class="btn-tint" style="flex:1" data-act="moveManual">Eingeben</button>
@@ -3711,7 +3735,7 @@ async function moveExcel(mode){
   const groups = {}; m.items.forEach(x => (groups[tblKey(x)] ||= []).push(x));
   const keys = Object.keys(groups).sort(roomSort);
   const maxMon = Math.max(2, ...keys.map(k => groups[k].filter(x => x.kind === 'Monitor').length));
-  const st = x => x.status === 'auf' ? 'Aufgebaut' : x.status === 'lager' ? 'Zwischenlager' : 'Abgebaut';
+  const st = x => x.status === 'auf' ? 'Aufgebaut' : x.status === 'lager' ? 'Zwischenlager' : x.status === 'rec' ? 'Erfasst' : 'Abgebaut';
   const T = keys.map(k => {
     const G = groups[k], f = G[0], mons = G.filter(x => x.kind === 'Monitor').map(x => x.code);
     const row = { 'Raum':f.room, 'Tisch':f.table };
@@ -3784,7 +3808,7 @@ function contShow(r){
 }
 function contTitle(){
   if(scan.mode === 'hwlc'){ const h = hwlcCur(); if(h){ const n = hwlcCounts(h), S = h.soll || {}; $('#scanTitle').textContent = `Mon ${n.Monitor}${S.mon ? '/' + S.mon : ''} · Host ${n.Host}${S.host ? '/' + S.host : ''} · Dock ${n.Dock}`; } }
-  if(scan.mode === 'move'){ const m = moveCur(), c = m && m.cur || {}; $('#scanTitle').textContent = c.mode === 'auf' ? `Aufbau → ${c.troom}${c.ttable ? ' · T' + c.ttable : ''}` : `${c.room || 'Raum?'}${c.table ? ' · Tisch ' + c.table : ''}`; }
+  if(scan.mode === 'move'){ const m = moveCur(), c = m && m.cur || {}; $('#scanTitle').textContent = c.mode === 'rec' ? ([c.std, c.etage, c.buero].filter(Boolean).join(' · ') || 'Standort?') : c.mode === 'auf' ? `Aufbau → ${c.troom}${c.ttable ? ' · T' + c.ttable : ''}` : `${c.room || 'Raum?'}${c.table ? ' · Tisch ' + c.table : ''}`; }
 }
 
 /* ===================== INTRO ===================== */
