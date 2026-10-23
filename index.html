@@ -3069,6 +3069,10 @@ document.addEventListener('click', e => {
     }
     case 'moveScan': {
       const m = moveCur(); if(!m) break;
+      if(m.cur.mode === 'rec'){
+        if(![m.cur.std, m.cur.etage, m.cur.buero].some(v => String(v || '').trim())){ toast('Zuerst Standort, Etage oder Büro wählen'); const f = $('#mv_std'); f && f.focus(); break; }
+        openScanner('move'); break;
+      }
       if(m.cur.mode === 'auf' ? !m.cur.troom : !m.cur.room){ toast(m.cur.mode === 'auf' ? 'Zuerst Zielraum eintragen' : 'Zuerst Raum eintragen'); const f = $(m.cur.mode === 'auf' ? '#mvTroom' : '#mvRoom'); f && f.focus(); break; }
       openScanner('move'); break;
     }
