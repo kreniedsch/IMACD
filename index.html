@@ -3617,7 +3617,8 @@ function recFields(cur){
   const art = cur.bart || 'Büro';
   const artRow = `<div class="row"><label class="k" for="mv_bart">Art</label><select id="mv_bart" data-mv="bart" style="background:none;border:0;color:inherit;font:inherit;text-align:right">${['Büro','Schalter'].map(o => `<option value="${o}" ${art === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
   return row('std', 'Standort', 'z. B. Amtshaus V', 'std') + row('etage', 'Etage', 'z. B. 2. OG', 'etage') + artRow + row('buero', 'Nummer / Name', 'z. B. 215', 'buero') +
-    `<div class="row"><label class="k" for="mv_table">Schalter-Nr.</label><input id="mv_table" data-mv="table" value="${esc(cur.table || '')}" placeholder="optional" autocomplete="off"></div>`;
+    `<div class="row"><label class="k" for="mv_table">Tisch-Nr.</label><input id="mv_table" data-mv="table" value="${esc(cur.table || '')}" placeholder="optional" autocomplete="off"></div>` +
+    `<div class="row"><label class="k" for="mv_note">Bemerkung</label><input id="mv_note" data-mv="note" value="${esc(cur.note || '')}" placeholder="optional" autocomplete="off"></div>`;
 }
 const roomSort = (a, b) => String(a).localeCompare(String(b), 'de', { numeric:true });
 function moveAdd(code, kind, label){
@@ -3631,7 +3632,7 @@ function moveAdd(code, kind, label){
     const ex = m.items.find(x => x.code === c);
     if(ex) return { ok:null, title:'Schon erfasst', sub:`${c} · ${ex.room || ''}${ex.table ? ' · Schalter ' + ex.table : ''}` };
     const k = kind || devKind(c) || 'Gerät';
-    m.items.push({ id:uid(), code:c, kind:k, room, table:String(cur.table || '').trim(), lager:'', troom:'', ttable:'', status:'rec', at:new Date().toISOString() });
+    m.items.push({ id:uid(), code:c, kind:k, room, table:String(cur.table || '').trim(), note:String(cur.note || '').trim(), lager:'', troom:'', ttable:'', status:'rec', at:new Date().toISOString() });
     ['std','etage','buero'].forEach(f => recHistAdd(f, cur[f]));
     save();
     return { ok:true, title:`${KIND_LABEL[k] || k} ${c}`, sub:room + (cur.table ? ' · Schalter ' + cur.table : '') };
@@ -3758,10 +3759,11 @@ async function moveExcel(mode){
     row['Zielraum'] = [...new Set(G.map(x => x.troom).filter(Boolean))].join(', ');
     row['Ziel-Tisch'] = [...new Set(G.map(x => x.ttable).filter(Boolean))].join(', ');
     row['Status'] = [...new Set(G.map(st))].join(' / ');
+    row['Bemerkung'] = [...new Set(G.map(x => x.note).filter(Boolean))].join('; ');
     row['Asset-IDs'] = G.filter(x => x.code).map(x => x.code).join(', ');
     return row;
   });
-  const D = keys.flatMap(k => groups[k]).map(x => ({ 'Raum':x.room, 'Tisch':x.table, 'Typ': x.kind === 'Peripherie' ? (x.label || 'Zubehör') : (KIND_LABEL[x.kind] || x.kind), 'Asset-ID':x.code, 'Zwischenlager':x.lager, 'Zielraum':x.troom, 'Ziel-Tisch':x.ttable, 'Status':st(x),
+  const D = keys.flatMap(k => groups[k]).map(x => ({ 'Raum':x.room, 'Tisch':x.table, 'Typ': x.kind === 'Peripherie' ? (x.label || 'Zubehör') : (KIND_LABEL[x.kind] || x.kind), 'Asset-ID':x.code, 'Zwischenlager':x.lager, 'Zielraum':x.troom, 'Bemerkung':x.note || '', 'Ziel-Tisch':x.ttable, 'Status':st(x),
     'Abgebaut': x.at && x.room ? new Date(x.at).toLocaleString('de-CH') : '', 'Aufgebaut': x.atAuf ? new Date(x.atAuf).toLocaleString('de-CH') : '' }));
   const wb = XLSX.utils.book_new();
   const add = (name, rows, w) => { const ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = Object.keys(rows[0] || {}).map(k => ({ wch: w[k] || 14 })); XLSX.utils.book_append_sheet(wb, ws, name); };
