@@ -3668,7 +3668,7 @@ function moveCounts(items){
   const pl = { Monitor:['Monitor', 'Monitore'], Dock:['Dock', 'Docks'], Host:['Host', 'Hosts'], Gerät:['Gerät', 'Geräte'] };
   return Object.keys(c).sort((a, b) => (order.indexOf(a) + 1 || 9) - (order.indexOf(b) + 1 || 9)).map(k => `${c[k]} ${pl[k] ? pl[k][c[k] === 1 ? 0 : 1] : k}`).join(' · ');
 }
-const statusBadge = x => x.status === 'auf' ? `<span class="badge green">→ ${esc(x.troom)}${x.ttable ? ' T' + esc(x.ttable) : ''}</span>` : x.status === 'lager' ? `<span class="badge orange">Lager ${esc(x.lager)}</span>` : `<span class="badge">Abgebaut</span>`;
+const statusBadge = x => x.status === 'auf' ? `<span class="badge green">→ ${esc(x.troom)}${x.ttable ? ' T' + esc(x.ttable) : ''}</span>` : x.status === 'lager' ? `<span class="badge orange">Lager ${esc(x.lager)}</span>` : x.status === 'rec' ? `<span class="badge green">Erfasst</span>` : `<span class="badge">Abgebaut</span>`;
 function renderMove(){
   const el = $('#tab-move'); if(!el) return;
   const M = state.moves || [], m = moveCur();
@@ -3693,7 +3693,7 @@ function renderMove(){
           <div class="row tbl-h"><span class="k"><b>${tb ? 'Tisch ' + esc(tb) : 'Ohne Tisch'}</b></span>
             <button class="xbtn blue" data-act="moveCopy" data-r="${esc(r)}" data-t="${esc(tb)}" aria-label="Asset-IDs kopieren">${ICON.copy}</button></div>
           ${T[tb].map(x => `<div class="row"><span class="code">${x.code ? esc(x.code) : `<span style="font-family:inherit">${esc(x.label || 'Peripherie')}</span>`}</span><span class="badge">${esc(KIND_SHORT[x.kind] || x.kind)}</span>${statusBadge(x)}<button class="xbtn" data-act="moveDel" data-v="${x.id}" aria-label="Löschen">${ICON.close}</button></div>`).join('')}`).join('')}
-        <div class="row tap" data-act="moveRoomActs" data-r="${esc(r)}"><span class="k blue">Raum: kopieren / ins Lager …</span></div>
+        ${(m.cur || {}).mode === 'rec' ? '' : `<div class="row tap" data-act="moveRoomActs" data-r="${esc(r)}"><span class="k blue">Raum: kopieren / ins Lager …</span></div>`}
       </div>`;
   }).join('');
   el.innerHTML = head + `
