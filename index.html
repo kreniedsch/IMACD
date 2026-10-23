@@ -3758,7 +3758,7 @@ async function moveExcel(mode){
     row['Zielraum'] = [...new Set(G.map(x => x.troom).filter(Boolean))].join(', ');
     row['Ziel-Tisch'] = [...new Set(G.map(x => x.ttable).filter(Boolean))].join(', ');
     row['Status'] = [...new Set(G.map(st))].join(' / ');
-    row['Asset-IDs'] = G.filter(x => x.code).map(x => x.code).join(' ');
+    row['Asset-IDs'] = G.filter(x => x.code).map(x => x.code).join(', ');
     return row;
   });
   const D = keys.flatMap(k => groups[k]).map(x => ({ 'Raum':x.room, 'Tisch':x.table, 'Typ': x.kind === 'Peripherie' ? (x.label || 'Zubehör') : (KIND_LABEL[x.kind] || x.kind), 'Asset-ID':x.code, 'Zwischenlager':x.lager, 'Zielraum':x.troom, 'Ziel-Tisch':x.ttable, 'Status':st(x),
