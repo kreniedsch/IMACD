@@ -3070,7 +3070,7 @@ document.addEventListener('click', e => {
     case 'moveScan': {
       const m = moveCur(); if(!m) break;
       if(m.cur.mode === 'rec'){
-        if(![m.cur.std, m.cur.etage, m.cur.buero].some(v => String(v || '').trim())){ toast('Zuerst Standort, Etage oder Büro wählen'); const f = $('#mv_std'); f && f.focus(); break; }
+        if(!recLabel(m.cur)){ toast('Zuerst Standort, Etage oder Büro wählen'); const f = $('#mv_std'); f && f.focus(); break; }
         openScanner('move'); break;
       }
       if(m.cur.mode === 'auf' ? !m.cur.troom : !m.cur.room){ toast(m.cur.mode === 'auf' ? 'Zuerst Zielraum eintragen' : 'Zuerst Raum eintragen'); const f = $(m.cur.mode === 'auf' ? '#mvTroom' : '#mvRoom'); f && f.focus(); break; }
@@ -3602,6 +3602,10 @@ function moveNewSheet(){
   setTimeout(() => { const i = $('#mvName'); i && i.focus(); }, 350);
 }
 const tblKey = x => (x.room || '?') + '|' + (x.table || '');
+function recLabel(cur){
+  const bz = String(cur.buero || '').trim();
+  return [cur.std, cur.etage, bz ? (cur.bart || 'Büro') + ' ' + bz : ''].map(v => String(v || '').trim()).filter(Boolean).join(' · ');
+}
 function recHistAdd(f, v){
   v = String(v || '').trim(); if(!v) return;
   const H = (state.settings.recHist ||= {}); const L = (H[f] ||= []);
@@ -3610,7 +3614,9 @@ function recHistAdd(f, v){
 function recFields(cur){
   const H = (state.settings.recHist || {});
   const row = (f, label, ph, dl) => `<div class="row"><label class="k" for="mv_${f}">${label}</label><input id="mv_${f}" data-mv="${f}" value="${esc(cur[f] || '')}" list="dl_${f}" placeholder="${ph}" autocomplete="off"><datalist id="dl_${f}">${(H[f] || []).map(v => `<option value="${esc(v)}">`).join('')}</datalist></div>`;
-  return row('std', 'Standort', 'z. B. Amtshaus V', 'std') + row('etage', 'Etage', 'z. B. 2. OG', 'etage') + row('buero', 'Büro / Schalter', 'z. B. Büro 215', 'buero') +
+  const art = cur.bart || 'Büro';
+  const artRow = `<div class="row"><label class="k" for="mv_bart">Art</label><select id="mv_bart" data-mv="bart" style="background:none;border:0;color:inherit;font:inherit;text-align:right">${['Büro','Schalter'].map(o => `<option value="${o}" ${art === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
+  return row('std', 'Standort', 'z. B. Amtshaus V', 'std') + row('etage', 'Etage', 'z. B. 2. OG', 'etage') + artRow + row('buero', 'Nummer / Name', 'z. B. 215', 'buero') +
     `<div class="row"><label class="k" for="mv_table">Schalter-Nr.</label><input id="mv_table" data-mv="table" value="${esc(cur.table || '')}" placeholder="optional" autocomplete="off"></div>`;
 }
 const roomSort = (a, b) => String(a).localeCompare(String(b), 'de', { numeric:true });
@@ -3619,7 +3625,7 @@ function moveAdd(code, kind, label){
   const cur = m.cur || {};
   const c = code ? String(code).trim().toUpperCase().replace(/\s+/g, '') : '';
   if(cur.mode === 'rec'){
-    const room = [cur.std, cur.etage, cur.buero].map(v => String(v || '').trim()).filter(Boolean).join(' · ');
+    const room = recLabel(cur);
     if(!room) return { ok:false, title:'Standort fehlt', sub:'Oben Standort, Etage oder Büro wählen' };
     if(!c) return { ok:false, title:'Kein Code' };
     const ex = m.items.find(x => x.code === c);
@@ -3812,7 +3818,7 @@ function contShow(r){
 }
 function contTitle(){
   if(scan.mode === 'hwlc'){ const h = hwlcCur(); if(h){ const n = hwlcCounts(h), S = h.soll || {}; $('#scanTitle').textContent = `Mon ${n.Monitor}${S.mon ? '/' + S.mon : ''} · Host ${n.Host}${S.host ? '/' + S.host : ''} · Dock ${n.Dock}`; } }
-  if(scan.mode === 'move'){ const m = moveCur(), c = m && m.cur || {}; $('#scanTitle').textContent = c.mode === 'rec' ? ([c.std, c.etage, c.buero].filter(Boolean).join(' · ') || 'Standort?') : c.mode === 'auf' ? `Aufbau → ${c.troom}${c.ttable ? ' · T' + c.ttable : ''}` : `${c.room || 'Raum?'}${c.table ? ' · Tisch ' + c.table : ''}`; }
+  if(scan.mode === 'move'){ const m = moveCur(), c = m && m.cur || {}; $('#scanTitle').textContent = c.mode === 'rec' ? (recLabel(c) || 'Standort?') : c.mode === 'auf' ? `Aufbau → ${c.troom}${c.ttable ? ' · T' + c.ttable : ''}` : `${c.room || 'Raum?'}${c.table ? ' · Tisch ' + c.table : ''}`; }
 }
 
 /* ===================== INTRO ===================== */
