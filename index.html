@@ -1063,12 +1063,12 @@ function groupOf(text){
   const kat = String(text).match(/^\W{0,3}(?:kategorien|categories)\s*:?(.*)$/im);
   const k = kat ? kat[1] : '';
   const m = (k || text).match(/techn[il1]ker\s*(\d)/i);
-  if(m && +m[1] >= 1 && +m[1] <= 3) return 'T' + m[1];
+  if(m && +m[1] >= 1 && +m[1] <= 4) return 'T' + m[1];
   if(/hwlc|life\s?c[yi]cle/i.test(k) || /^\W*betreff:\s*(hardware-?life|hwlc|bot team)/im.test(text)) return 'HWLC';
   if(/post/i.test(k) || /VERSAND:/.test(text)) return 'Post';
   return '';
 }
-const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['HWLC','HWLC'],['Umzug','Umzug'],['all','Alle']];
+const GROUPS = [['T1','T1'],['T2','T2'],['T3','T3'],['T4','T4'],['HWLC','HWLC'],['Umzug','Umzug'],['all','Alle']];
 const viewGroup = () => state.settings.view || 'all';
 const visible = t => !t.cancelled && (viewGroup() === 'all' || viewGroup() === 'Umzug' || (t.group || '') === viewGroup());
 function isForMe(text, myTech){
@@ -1156,7 +1156,7 @@ function load(){
   try{
     const s = JSON.parse(localStorage.getItem(STORE));
     if(s && s.settings && !s.settings.v3){
-      const tg = /^[123]$/.test(s.settings.tech || '') ? 'T' + s.settings.tech : '';
+      const tg = /^[1234]$/.test(s.settings.tech || '') ? 'T' + s.settings.tech : '';
       if(!s.settings.view) s.settings.view = tg || 'all';
       (s.tickets || []).forEach(t => { if(!t.group) t.group = groupOf(t.raw || '') || tg; });
       s.settings.v3 = true;
@@ -1494,7 +1494,7 @@ function teamLine(){
   const T = state.settings.team; if(!T || T.date !== todayIso() || view.date !== T.date) return '';
   const me = state.settings.tech ? 'T' + state.settings.tech : '';
   const label = g => g === 'HWLC' ? 'HWLC' : 'Techniker ' + g[1];
-  const parts = ['T1','T2','T3','HWLC'].filter(g => T[g] || g === me).map(g => `${label(g)}${g === me ? ' (du)' : ''}${T[g] ? ': ' + esc(T[g]) : ''}`);
+  const parts = ['T1','T2','T3','T4','HWLC'].filter(g => T[g] || g === me).map(g => `${label(g)}${g === me ? ' (du)' : ''}${T[g] ? ': ' + esc(T[g]) : ''}`);
   return parts.length ? `<div class="gfoot" style="margin:0 0 10px">${parts.join(' · ')}</div>` : '';
 }
 function renderPlanCore(){
@@ -1799,7 +1799,7 @@ function renderData(){
 
     <div class="glabel">Team heute</div>
     <div class="group form">
-      ${[['T1','Techniker 1'],['T2','Techniker 2'],['T3','Techniker 3'],['HWLC','HWLC']].map(([g,l]) => `<div class="row"><label class="k" for="tm${g}">${l}</label><input type="text" id="tm${g}" data-set="tm_${g}" value="${esc(teamToday()[g] || '')}" placeholder="Name" autocomplete="off" style="text-align:right"></div>`).join('')}
+      ${[['T1','Techniker 1'],['T2','Techniker 2'],['T3','Techniker 3'],['T4','Techniker 4'],['HWLC','HWLC']].map(([g,l]) => `<div class="row"><label class="k" for="tm${g}">${l}</label><input type="text" id="tm${g}" data-set="tm_${g}" value="${esc(teamToday()[g] || '')}" placeholder="Name" autocomplete="off" style="text-align:right"></div>`).join('')}
     </div>
     <div class="gfoot">Wer ist heute wo eingeteilt? Die Namen erscheinen oben im Tagesplan. Gelten nur für heute.</div>
 
