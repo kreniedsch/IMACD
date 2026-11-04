@@ -2881,7 +2881,7 @@ document.addEventListener('click', e => {
   switch(b.dataset.act){
     case 'scanFind': if(sheetMode === 'scanresult') closeSheet(); openScanner('find'); break;
     case 'scanTicket': openScanner('ticket', id); break;
-    case 'scanClose': closeScanner(); if((scan.mode === 'old' || scan.mode === 'new') && scan.id) openFinish(scan.id); break;
+    case 'scanClose': closeScanner(); if((scan.mode === 'old' || scan.mode === 'new') && scan.id) openFinish(scan.id); else if(scan.mode === 'ticket' && scan.id) openDetail(scan.id); break;
     case 'scanTorch': toggleTorch(); break;
     case 'scanOld': openScanner('old', id); break;
     case 'manOld': {
