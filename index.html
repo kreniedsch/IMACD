@@ -3754,9 +3754,9 @@ async function moveExcel(mode){
   const T = keys.map(k => {
     const G = groups[k], f = G[0], mons = G.filter(x => x.kind === 'Monitor').map(x => x.code);
     const row = { 'Raum':f.room, 'Tisch':f.table };
-    for(let i = 0; i < maxMon; i++) row['Monitor ' + (i + 1)] = mons[i] || '';
-    row['Dockingstation'] = G.filter(x => x.kind === 'Dock').map(x => x.code).join(', ');
     row['Host'] = G.filter(x => x.kind === 'Host').map(x => x.code).join(', ');
+    row['Docking'] = G.filter(x => x.kind === 'Dock').map(x => x.code).join(', ');
+    for(let i = 0; i < maxMon; i++) row['Monitor ' + (i + 1)] = mons[i] || '';
     row['Andere Geräte'] = G.filter(x => x.kind === 'Gerät').map(x => x.code).join(', ');
     row['Zubehör'] = moveCounts(G.filter(x => x.kind === 'Peripherie'));
     row['Zwischenlager'] = [...new Set(G.map(x => x.lager).filter(Boolean))].join(', ');
