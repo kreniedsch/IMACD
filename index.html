@@ -3787,6 +3787,22 @@ function moveRoomActs(r){
 async function moveExcel(mode){
   const m = moveCur(); if(!m || !m.items.length) return;
   try{ await loadScript(XLSX_URL); }catch(e){ toast('Excel-Bibliothek konnte nicht geladen werden (Internet?)'); return; }
+  if(m.cur && m.cur.mode === 'auf'){   // Aufbau: nur der neue Ort – Raum, Tisch, Host, Docking, Monitore (ohne Herkunft)
+    const A = {}; m.items.filter(x => x.status === 'auf' && x.code).forEach(x => (A[(x.troom || '?') + '|' + (x.ttable || '')] ||= []).push(x));
+    const ak = Object.keys(A).sort(roomSort), mx = Math.max(2, ...ak.map(k => A[k].filter(x => x.kind === 'Monitor').length));
+    const rows = ak.map(k => { const G = A[k], mons = G.filter(x => x.kind === 'Monitor').map(x => x.code);
+      const row = { 'Raum':G[0].troom || '', 'Tisch':G[0].ttable || '', 'Host':G.filter(x => x.kind === 'Host').map(x => x.code).join(', '), 'Docking':G.filter(x => x.kind === 'Dock').map(x => x.code).join(', ') };
+      for(let i = 0; i < mx; i++) row['Monitor ' + (i + 1)] = mons[i] || '';
+      const other = G.filter(x => !['Host', 'Dock', 'Monitor'].includes(x.kind)).map(x => x.code).join(', '); if(other) row['Andere Geräte'] = other;
+      return row; });
+    if(rows.some(r => r['Andere Geräte'])) rows.forEach(r => r['Andere Geräte'] ||= '');
+    const wb = XLSX.utils.book_new(), ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = Object.keys(rows[0] || {}).map(k => ({ wch: k === 'Raum' ? 14 : k === 'Tisch' ? 7 : 14 }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Aufbau');
+    const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    const name = `Aufbau_${(m.name || 'Umzug').replace(/[^\wäöüÄÖÜ.-]+/g, '_')}_${m.date}.xlsx`, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    if(mode === 'mail'){ const file = new File([out], name, { type:mime }); if(navigator.canShare && navigator.canShare({ files:[file] })){ try{ await navigator.share({ files:[file], title:name }); return; }catch(e){ if(e.name === 'AbortError') return; } } }
+    await deliver(name, out, mime, mode === 'mail'); return;
+  }
   const groups = {}; m.items.forEach(x => (groups[tblKey(x)] ||= []).push(x));
   const keys = Object.keys(groups).sort(roomSort);
   const maxMon = Math.max(2, ...keys.map(k => groups[k].filter(x => x.kind === 'Monitor').length));
