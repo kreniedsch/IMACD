@@ -3719,7 +3719,20 @@ function renderMove(){
   const cur = m.cur ||= { mode:'ab', room:'', table:'', lager:'', troom:'', ttable:'' };
   const rec = cur.mode === 'rec';
   const ab = cur.mode !== 'auf' && !rec;
-  const rooms = {}; m.items.forEach(x => ((rooms[x.room || '–'] ||= {})[x.table || ''] ||= []).push(x));
+  const aufMode = cur.mode === 'auf';
+  const rooms = {}; m.items.filter(x => !(aufMode && x.status === 'auf')).forEach(x => ((rooms[x.room || '–'] ||= {})[x.table || ''] ||= []).push(x));
+  // Aufbau: bereits aufgebaute Geräte nach NEUEM Ort (Zielraum / Ziel-Tisch) gruppiert, Herkunft als Badge
+  let placed = '';
+  if(aufMode){
+    const P = {}; m.items.filter(x => x.status === 'auf').forEach(x => ((P[x.troom || '–'] ||= {})[x.ttable || ''] ||= []).push(x));
+    placed = Object.keys(P).sort(roomSort).map(r => {
+      const all = Object.values(P[r]).flat();
+      return `<div class="glabel"><span>Neu: ${esc(r)}</span><span>${esc(moveCounts(all))}</span></div>
+        <div class="group tbl">${Object.keys(P[r]).sort(roomSort).map(tb => `
+          <div class="row tbl-h"><span class="k"><b>${tb ? 'Tisch ' + esc(tb) : 'Ohne Tisch'}</b></span></div>
+          ${P[r][tb].map(x => `<div class="row"><span class="code">${esc(x.code)}</span><span class="badge">${esc(KIND_SHORT[x.kind] || x.kind)}</span><span class="badge">← ${esc(x.room || '?')}${x.table ? ' T' + esc(x.table) : ''}</span><button class="xbtn" data-act="moveDel" data-v="${x.id}" aria-label="Löschen">${ICON.close}</button></div>`).join('')}`).join('')}</div>`;
+    }).join('');
+  }
   const nAuf = m.items.filter(x => x.status === 'auf').length, nAll = m.items.length, nAllMoves = (state.moves || []).reduce((n, v) => n + (v.items || []).length, 0);
   const list = Object.keys(rooms).sort(roomSort).map(r => {
     const T = rooms[r], all = Object.values(T).flat();
@@ -3751,7 +3764,8 @@ function renderMove(){
     </div>
     ${nAllMoves ? `<button class="btn-tint" style="width:100%;margin-top:10px" data-act="moveFind">${ICON.qr}Gerät suchen – Raum / Tisch anzeigen</button>` : ''}
     ${ab ? `<div class="glabel">Zubehör am Platz</div><div class="pchips">${PERI.map(p => `<button class="chip" data-act="movePeri" data-v="${p}">${p}</button>`).join('')}<button class="chip" data-act="movePeriOwn">${ICON.plus.replace('<svg', '<svg width="14" height="14"')} Andere</button></div>` : ''}
-    ${list || `<div class="gfoot" style="margin-top:18px">Noch keine Geräte erfasst.</div>`}
+    ${placed}${aufMode && placed && list ? '<div class="glabel"><span>Noch nicht aufgebaut</span></div>' : ''}
+    ${list || (placed ? '' : `<div class="gfoot" style="margin-top:18px">Noch keine Geräte erfasst.</div>`)}
     ${nAll ? `<button class="btn-fill" style="width:100%;margin-top:18px;background:var(--green)" data-act="moveExcel" data-v="mail">${ICON.mail}Excel per Mail</button>
     <button class="btn-tint" style="width:100%;margin-top:10px" data-act="moveExcel" data-v="save">${ICON.download}Excel sichern</button>
     <div class="gfoot">Excel mit einer Zeile pro Tisch (Raum, Tisch, Monitore, Dock, Zubehör, Lager, Ziel) und einer Liste aller Asset-IDs zum Kopieren in den Auftrag.</div>` : ''}
