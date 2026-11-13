@@ -2438,7 +2438,7 @@ async function openScanner(mode, id){
   scan.mode = mode; scan.id = id || null; scan.keep = ['old','new','ticket'].includes(mode);
   const t = id && state.tickets.find(x => x.id === id);
   scan.paused = false; scan.ask = null; scan.last = ''; $('#scanMsg').hidden = true;
-  $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : mode === 'quarin' ? 'Quarantäne buchen' : mode === 'quar' ? 'Quarantäne prüfen' : 'Code scannen';
+  $('#scanTitle').textContent = mode === 'old' ? 'Altes Gerät scannen' : mode === 'new' ? 'Neues Gerät scannen' : mode === 'ticket' ? 'Gerät scannen' : mode === 'quarin' ? 'Quarantäne buchen' : mode === 'quar' ? 'Quarantäne prüfen' : mode === 'movefind' ? 'Gerät suchen' : 'Code scannen';
   if(CONT_MODES.has(mode)) setTimeout(contTitle, 0);
   $('#scanHint').textContent = (CONT_MODES.has(mode) || scan.keep) ? 'Ein Etikett nach dem anderen scannen – mit ✕ beenden' : mode === 'old' ? 'QR-Etikett vom alten Gerät in den Rahmen halten' : mode === 'new' ? 'QR-Etikett vom neuen Gerät in den Rahmen halten' : mode === 'ticket' ? `Etikett von ${t && t.newDevice ? 'neuem oder altem ' : ''}Gerät in den Rahmen halten` : 'QR-Code oder Barcode in den Rahmen halten';
   $('#scanner').hidden = false; document.body.style.overflow = 'hidden';
@@ -3080,6 +3080,7 @@ document.addEventListener('click', e => {
       if(m.cur.mode === 'auf' ? !m.cur.troom : !m.cur.room){ toast(m.cur.mode === 'auf' ? 'Zuerst Zielraum eintragen' : 'Zuerst Raum eintragen'); const f = $(m.cur.mode === 'auf' ? '#mvTroom' : '#mvRoom'); f && f.focus(); break; }
       openScanner('move'); break;
     }
+    case 'moveFind': openScanner('movefind'); break;
     case 'moveManual': hwlcManualSheet('move'); break;
     case 'movePeri': { const r = moveAdd('', 'Peripherie', b.dataset.v); toast(r.ok ? `${b.dataset.v} · ${r.sub}` : r.title); renderMove(); break; }
     case 'movePeriOwn': { const v = prompt('Zubehör (z. B. Dockingkabel, Telefon):'); if(v && v.trim()){ const r = moveAdd('', 'Peripherie', v.trim()); toast(r.ok ? `${v.trim()} · ${r.sub}` : r.title); renderMove(); } break; }
@@ -3624,6 +3625,23 @@ function recFields(cur){
     `<div class="row"><label class="k" for="mv_table">Tisch-Nr.</label><input id="mv_table" data-mv="table" value="${esc(cur.table || '')}" placeholder="optional" autocomplete="off"></div>` +
     `<div class="row"><label class="k" for="mv_note">Bemerkung</label><input id="mv_note" data-mv="note" value="${esc(cur.note || '')}" placeholder="optional" autocomplete="off"></div>`;
 }
+/* Gerät in einem anderen Umzug suchen (neuester Umzug zuerst) */
+function moveFindOther(c, except){
+  const M = (state.moves || []).filter(x => x !== except).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  for(const mv of M){ const it = (mv.items || []).find(x => x.code === c); if(it) return { m:mv, it }; }
+  return null;
+}
+function moveFind(code){
+  const c = String(code || '').trim().toUpperCase().replace(/\s+/g, '');
+  const hits = [];
+  (state.moves || []).slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).forEach(mv => (mv.items || []).forEach(x => { if(x.code === c) hits.push({ mv, x }); }));
+  if(!hits.length) return { ok:null, title:'Nicht erfasst', sub:c };
+  const { mv, x } = hits[0];
+  const where = `${x.room || '?'}${x.table ? ' · Tisch ' + x.table : ''}`;
+  const now = x.status === 'auf' ? ` → ${x.troom}${x.ttable ? ' · Tisch ' + x.ttable : ''}` : x.status === 'lager' ? ` → Lager ${x.lager}` : '';
+  const extra = hits.length > 1 ? ` · auch in ${hits.slice(1).map(h => h.mv.name).join(', ')}` : '';
+  return { ok:true, title:`${KIND_LABEL[x.kind] || x.kind} ${c}`, sub:`${where}${now} · ${mv.name} ${mv.date.slice(8, 10)}.${mv.date.slice(5, 7)}.${extra}` };
+}
 const roomSort = (a, b) => String(a).localeCompare(String(b), 'de', { numeric:true });
 function moveAdd(code, kind, label){
   const m = moveCur(); if(!m) return { ok:false, title:'Kein Umzug angelegt' };
@@ -3643,7 +3661,14 @@ function moveAdd(code, kind, label){
   }
   if(cur.mode === 'auf'){
     if(!cur.troom) return { ok:false, title:'Zielraum fehlt', sub:'Oben den Zielraum eintragen' };
-    const it = c && m.items.find(x => x.code === c);
+    let it = c && m.items.find(x => x.code === c);
+    if(!it && c){
+      const o = moveFindOther(c, m);
+      if(o){
+        it = { id:uid(), code:c, kind:o.it.kind, room:`${o.m.name} · ${o.it.room || '?'}`, table:o.it.table || '', note:o.it.note || '', lager:'', troom:'', ttable:'', status:'ab', at:o.it.at };
+        m.items.push(it);
+      }
+    }
     if(!it){
       if(!c) return { ok:false, title:'Kein Code' };
       return { ok:null, title:'Nicht im Abbau erfasst', sub:c, ask:[['Trotzdem aufnehmen', () => { m.items.push({ id:uid(), code:c, kind: kind || devKind(c) || 'Gerät', room:'', table:'', lager:'', troom:cur.troom, ttable:cur.ttable || '', status:'auf', at:new Date().toISOString(), atAuf:new Date().toISOString() }); save(); return { ok:true, title:'Aufgenommen', sub:`${c} → ${cur.troom}` }; }], ['Verwerfen', () => ({ ok:null, title:'Verworfen' })]] };
@@ -3695,7 +3720,7 @@ function renderMove(){
   const rec = cur.mode === 'rec';
   const ab = cur.mode !== 'auf' && !rec;
   const rooms = {}; m.items.forEach(x => ((rooms[x.room || '–'] ||= {})[x.table || ''] ||= []).push(x));
-  const nAuf = m.items.filter(x => x.status === 'auf').length, nAll = m.items.length;
+  const nAuf = m.items.filter(x => x.status === 'auf').length, nAll = m.items.length, nAllMoves = (state.moves || []).reduce((n, v) => n + (v.items || []).length, 0);
   const list = Object.keys(rooms).sort(roomSort).map(r => {
     const T = rooms[r], all = Object.values(T).flat();
     return `<div class="glabel"><span>${esc(r)}</span><span>${esc(moveCounts(all))}</span></div>
@@ -3719,11 +3744,12 @@ function renderMove(){
       <div class="row"><label class="k" for="mvTroom">Zielraum</label><input id="mvTroom" data-mv="troom" value="${esc(cur.troom)}" placeholder="z. B. Büro 215" autocomplete="off"></div>
       <div class="row"><label class="k" for="mvTtable">Ziel-Tisch</label><input id="mvTtable" data-mv="ttable" value="${esc(cur.ttable)}" placeholder="optional" autocomplete="off"><button class="pillbtn" data-act="moveNextTable">+1</button></div>`}
     </div>
-    <div class="gfoot">${rec ? 'Standort, Etage und Büro bzw. Schalter wählen, dann die Geräte scannen. Die Vorschläge merkt sich die App.' : ab ? 'Alle Asset-IDs im Raum scannen. Mit Tisch-Nr. weiss die App beim Aufbau, was zusammengehört.' : 'Gerät scannen – die App zeigt, aus welchem Raum und Tisch es kommt, und warnt, wenn ein Tisch auseinandergerissen wird.'}</div>
+    <div class="gfoot">${rec ? 'Standort, Etage und Büro bzw. Schalter wählen, dann die Geräte scannen. Die Vorschläge merkt sich die App.' : ab ? 'Alle Asset-IDs im Raum scannen. Mit Tisch-Nr. weiss die App beim Aufbau, was zusammengehört.' : 'Gerät scannen – die App zeigt, aus welchem Raum und Tisch es kommt (auch aus einem anderen Umzug, z. B. Abbau an einem anderen Standort), und warnt, wenn ein Tisch auseinandergerissen wird.'}</div>
     <div style="display:flex;gap:10px;margin-top:14px">
       <button class="btn-fill" style="flex:2" data-act="moveScan">${ICON.qr}Scannen</button>
       <button class="btn-tint" style="flex:1" data-act="moveManual">Eingeben</button>
     </div>
+    ${nAllMoves ? `<button class="btn-tint" style="width:100%;margin-top:10px" data-act="moveFind">${ICON.qr}Gerät suchen – Raum / Tisch anzeigen</button>` : ''}
     ${ab ? `<div class="glabel">Zubehör am Platz</div><div class="pchips">${PERI.map(p => `<button class="chip" data-act="movePeri" data-v="${p}">${p}</button>`).join('')}<button class="chip" data-act="movePeriOwn">${ICON.plus.replace('<svg', '<svg width="14" height="14"')} Andere</button></div>` : ''}
     ${list || `<div class="gfoot" style="margin-top:18px">Noch keine Geräte erfasst.</div>`}
     ${nAll ? `<button class="btn-fill" style="width:100%;margin-top:18px;background:var(--green)" data-act="moveExcel" data-v="mail">${ICON.mail}Excel per Mail</button>
@@ -3783,7 +3809,7 @@ async function moveExcel(mode){
 }
 
 /* ---------- Dauer-Scan (Kamera bleibt offen) für HWLC und Umzug ---------- */
-const CONT_MODES = new Set(['hwlc', 'move', 'quarin', 'quar']);
+const CONT_MODES = new Set(['hwlc', 'move', 'quarin', 'quar', 'movefind']);
 function contScan(code){
   let sn = '';
   if(isModemCode(code)) return { ok:false, title:'Modem-Code (IMEI)', sub:'Bitte die Asset-ID scannen' };
@@ -3791,6 +3817,7 @@ function contScan(code){
   const c = sn || code;
   if(scan.mode === 'quarin') return quarBook(c);
   if(scan.mode === 'quar') return quarCheck(c);
+  if(scan.mode === 'movefind') return moveFind(c);
   return scan.mode === 'hwlc' ? hwlcAdd(c) : moveAdd(c);
 }
 /* ===================== QUARANTÄNE (Hosts 48 h) ===================== */
