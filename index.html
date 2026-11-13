@@ -3794,9 +3794,10 @@ async function moveExcel(mode){
       const row = { 'Raum':G[0].troom || '', 'Tisch':G[0].ttable || '', 'Host':G.filter(x => x.kind === 'Host').map(x => x.code).join(', '), 'Docking':G.filter(x => x.kind === 'Dock').map(x => x.code).join(', ') };
       for(let i = 0; i < mx; i++) row['Monitor ' + (i + 1)] = mons[i] || '';
       const other = G.filter(x => !['Host', 'Dock', 'Monitor'].includes(x.kind)).map(x => x.code).join(', '); if(other) row['Andere Geräte'] = other;
+      row['Asset-IDs'] = G.map(x => x.code).join(', ');
       return row; });
     if(rows.some(r => r['Andere Geräte'])) rows.forEach(r => r['Andere Geräte'] ||= '');
-    const wb = XLSX.utils.book_new(), ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = Object.keys(rows[0] || {}).map(k => ({ wch: k === 'Raum' ? 14 : k === 'Tisch' ? 7 : 14 }));
+    const wb = XLSX.utils.book_new(), ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = Object.keys(rows[0] || {}).map(k => ({ wch: k === 'Raum' ? 14 : k === 'Tisch' ? 7 : k === 'Asset-IDs' ? 60 : 14 }));
     XLSX.utils.book_append_sheet(wb, ws, 'Aufbau');
     const out = XLSX.write(wb, { bookType:'xlsx', type:'array' });
     const name = `Aufbau_${(m.name || 'Umzug').replace(/[^\wäöüÄÖÜ.-]+/g, '_')}_${m.date}.xlsx`, mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
